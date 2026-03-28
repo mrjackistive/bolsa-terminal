@@ -668,66 +668,42 @@ function loadBenchmarks(){
   btn.disabled=true;btn.textContent="A carregar...";
   var prog=document.getElementById("bench-progress");prog.classList.remove("hidden");
   prog.textContent="Índices: 0/3";
-
-  Promise.all([
-    fetchYahooHist("IWDA.AS"),
-    fetchYahooHist("^GSPC"),
-    fetchYahooHist("EURUSD=X")
-  ]).then(function(res){
+  Promise.all([fetchYahooHist("IWDA.AS"),fetchYahooHist("^GSPC"),fetchYahooHist("EURUSD=X")]).then(function(res){
     var iwdaH=res[0],spH=res[1],fxH=res[2];
     prog.textContent="Índices: 3/3";
-    // Convert S&P to EUR
     var sp500Eur=null;
-    if(spH&&fxH){sp500Eur={};var spKeys=Object.keys(spH);
+    if(spH&&fxH){
+      sp500Eur={};var spKeys=Object.keys(spH);
       for(var i=0;i<spKeys.length;i++){var k=spKeys[i];var fx=fxH[k];
         if(!fx){var fxKs=Object.keys(fxH).sort();for(var j=fxKs.length-1;j>=0;j--){if(fxKs[j]<=k){fx=fxH[fxKs[j]];break}}}
-        if(fx&&fx>0)sp500Eur[k]=spH[k]/fx}}
-    // Build monthly FX rates for position value conversion
-    var monthlyFx={};
-    if(fxH){var fxKeys=Object.keys(fxH).sort();
-      // We need all currency pairs, not just EURUSD. Fetch them.
-      var moedas={};for(var pi=0;pi<D.pos.length;pi++){var meCur=D.pos[pi].me;if(meCur&&meCur!=="EUR")moedas[meCur]=1}
-      var fxPairsHist=Object.keys(moedas).filter(function(m){return m!=="USD"}).map(function(m){return"EUR"+m+"=X"});
-      // USD is already in fxH (EURUSD=X)
-      // For other currencies, fetch their history too
-      var fxHistories={USD:fxH};
-
-      if(fxPairsHist.length>0){
-        prog.textContent="Câmbios: 0/"+fxPairsHist.length;
-        var fxDone=0;
-        var fxProms=fxPairsHist.map(function(pair){
-          return fetchYahooHist(pair).then(function(hist){
-            var cur=pair.replace("EUR","").replace("=X","");
-            if(hist)fxHistories[cur]=hist;
-            fxDone++;prog.textContent="Câmbios: "+fxDone+"/"+fxPairsHist.length;
-          })
-        });
-        Promise.all(fxProms).then(function(){
-          // Build monthlyFx: {month: {USD: rate, CAD: rate, ...}}
-          var allFxMonths={};
-          for(var cur in fxHistories){var ks=Object.keys(fxHistories[cur]);for(var ki=0;ki<ks.length;ki++)allFxMonths[ks[ki]]=1}
-          for(var month in allFxMonths){monthlyFx[month]={};for(var cur2 in fxHistories){if(fxHistories[cur2][month])monthlyFx[month][cur2]=fxHistories[cur2][month]}}
-
-          M2.bench={iwda:iwdaH,sp500Eur:sp500Eur,monthlyFx:monthlyFx,portCurve:null};
-          M2.sp500Bench=m2getSP500Summary();
-          renderMod2();
-          btn.textContent="Benchmarks carregados";btn.style.background="rgba(52,211,153,.15)";btn.style.borderColor="rgba(52,211,153,.3)";btn.style.color="#34d399";
-          // Now fetch historical prices for positions
-          prog.textContent="Posições: 0/"+D.pos.length;
-          fetchYahooHistPositions(D.pos,monthlyFx);
-        });
-      }else{
-        // Only USD needed
-        var allFxMonths2={};var ks2=Object.keys(fxH);for(var ki2=0;ki2<ks2.length;ki2++)allFxMonths2[ks2[ki2]]=1;
-        for(var month2 in allFxMonths2){monthlyFx[month2]={USD:fxH[month2]}}
-        M2.bench={iwda:iwdaH,sp500Eur:sp500Eur,monthlyFx:monthlyFx,portCurve:null};
-        M2.sp500Bench=m2getSP500Summary();
-        renderMod2();
-        btn.textContent="Benchmarks carregados";btn.style.background="rgba(52,211,153,.15)";btn.style.borderColor="rgba(52,211,153,.3)";btn.style.color="#34d399";
-        prog.textContent="Posições: 0/"+D.pos.length;
-        fetchYahooHistPositions(D.pos,monthlyFx);
-      }
-    });
+        if(fx&&fx>0)sp500Eur[k]=spH[k]/fx}
+    }
+    var moedas={};for(var pi=0;pi<D.pos.length;pi++){var meCur=D.pos[pi].me;if(meCur&&meCur!=="EUR")moedas[meCur]=1}
+    var fxPairsHist=Object.keys(moedas).filter(function(m){return m!=="USD"}).map(function(m){return"EUR"+m+"=X"});
+    var fxHistories={};if(fxH)fxHistories["USD"]=fxH;
+    function finalizeBench(fxHistories2){
+      var monthlyFx={};var allFxM={};
+      for(var cur in fxHistories2){var ks=Object.keys(fxHistories2[cur]);for(var ki=0;ki<ks.length;ki++)allFxM[ks[ki]]=1}
+      for(var month in allFxM){monthlyFx[month]={};for(var cur2 in fxHistories2){if(fxHistories2[cur2][month])monthlyFx[month][cur2]=fxHistories2[cur2][month]}}
+      M2.bench={iwda:iwdaH,sp500Eur:sp500Eur,monthlyFx:monthlyFx,portCurve:null};
+      M2.sp500Bench=m2getSP500Summary();
+      renderMod2();
+      btn.textContent="Benchmarks carregados";btn.style.background="rgba(52,211,153,.15)";btn.style.borderColor="rgba(52,211,153,.3)";btn.style.color="#34d399";
+      prog.textContent="Posições: 0/"+D.pos.length;
+      fetchYahooHistPositions(D.pos,monthlyFx);
+    }
+    if(fxPairsHist.length>0){
+      prog.textContent="Câmbios: 0/"+fxPairsHist.length;var fxDone=0;
+      var fxProms=fxPairsHist.map(function(pair){
+        return fetchYahooHist(pair).then(function(hist){
+          var cur=pair.replace("EUR","").replace("=X","");if(hist)fxHistories[cur]=hist;
+          fxDone++;prog.textContent="Câmbios: "+fxDone+"/"+fxPairsHist.length;
+        })
+      });
+      Promise.all(fxProms).then(function(){finalizeBench(fxHistories)});
+    }else{
+      finalizeBench(fxHistories);
+    }
   }).catch(function(){
     btn.disabled=false;btn.textContent="Erro — tentar novamente";
     prog.classList.add("hidden");
