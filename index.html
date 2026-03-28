@@ -606,31 +606,9 @@ function fetchYahooHist(ticker){
   }).catch(function(){return null})
 }
 
-function fetchYahooHistPositions(positions,fxRates){
-  // Instead of fetching 48+ individual position histories and dealing with
-  // complex FX conversions, use a more robust approach:
-  // Scale the IWDA-proxy curve by the portfolio's actual alpha.
-  // For each month M: portfolio_value(M) ≈ iwda_value(M) × (actual_return / iwda_return)
-  // This gives a curve that:
-  // 1. Has the correct final value (from Excel)
-  // 2. Has realistic intermediate shape (based on market movements)
-  // 3. Captures the timing of cash flows correctly
-  var s=m2getSummary();
-  if(!s||!D||!D.m2)return;
-  var chart=D.m2.chart;
-  if(chart.length===0)return;
-  // Ratio of actual portfolio return vs IWDA return
-  var actualRatio=s.val/s.iwdaVal; // e.g. 3.898M/3.972M = 0.981
-  var portCurve={};
-  for(var i=0;i<chart.length;i++){
-    var d=chart[i];
-    portCurve[d.m]=Math.round(d.iwda*actualRatio);
-  }
-  // Anchor final point to actual portfolio value
-  if(chart.length>0){
-    portCurve[chart[chart.length-1].m]=Math.round(s.val);
-  }
-  M2.bench.portCurve=portCurve;
+function fetchYahooHistPositions(){
+  // Portfolio curve is now calculated in renderMod2Chart using entity-filtered data
+  // No additional API calls needed
   renderMod2();
   var prog=document.getElementById("bench-progress");
   prog.classList.add("hidden");
@@ -659,12 +637,11 @@ function loadBenchmarks(){
       var monthlyFx={};var allFxM={};
       for(var cur in fxHistories2){var ks=Object.keys(fxHistories2[cur]);for(var ki=0;ki<ks.length;ki++)allFxM[ks[ki]]=1}
       for(var month in allFxM){monthlyFx[month]={};for(var cur2 in fxHistories2){if(fxHistories2[cur2][month])monthlyFx[month][cur2]=fxHistories2[cur2][month]}}
-      M2.bench={iwda:iwdaH,sp500Eur:sp500Eur,monthlyFx:monthlyFx,portCurve:null};
+      M2.bench={iwda:iwdaH,sp500Eur:sp500Eur,monthlyFx:monthlyFx};
       M2.sp500Bench=m2getSP500Summary();
       renderMod2();
       btn.textContent="Benchmarks carregados";btn.style.background="rgba(52,211,153,.15)";btn.style.borderColor="rgba(52,211,153,.3)";btn.style.color="#34d399";
-      prog.textContent="Posições: 0/"+D.pos.length;
-      fetchYahooHistPositions(D.pos,monthlyFx);
+      prog.classList.add("hidden");
     }
     if(fxPairsHist.length>0){
       prog.textContent="Câmbios: 0/"+fxPairsHist.length;var fxDone=0;
@@ -714,30 +691,32 @@ function renderMod2Periods(){
 
 function renderMod2Chart(){
   var cd=m2filterChart(M2.period);if(cd.length===0)return;
+  var s=m2getSummary();if(!s)return;
   var labels=cd.map(function(d){return m2dl(d.m)});
   var invData=cd.map(function(d){return d.inv});
   var iwdaData=cd.map(function(d){return d.iwda});
 
-  // Portfolio real curve (if available from Yahoo)
+  // Portfolio curve: scale entity-filtered IWDA curve by actual alpha ratio
+  // This uses the SAME entity-filtered data (cd) so it's always consistent
   var portData=null;
-  if(M2.bench&&M2.bench.portCurve){
-    portData=cd.map(function(d){return M2.bench.portCurve[d.m]||null});
-    // Fill the last point with actual value
-    var s=m2getSummary();
-    if(s&&portData.length>0)portData[portData.length-1]=Math.round(s.val);
+  if(M2.bench&&s.iwdaVal>0){
+    var ratio=s.val/s.iwdaVal; // actual portfolio value / IWDA benchmark value
+    portData=cd.map(function(d,idx){
+      if(idx===cd.length-1)return Math.round(s.val); // anchor final point to real value
+      return Math.round(d.iwda*ratio);
+    });
   }
 
-  // S&P 500 EUR curve
+  // S&P 500 EUR curve - built from entity-filtered transactions
   var spData=null;
   if(M2.bench&&M2.bench.sp500Eur){
     var sp=M2.bench.sp500Eur;var spKeys=Object.keys(sp).sort();
-    // For the same months as chart, build S&P benchmark curve
+    var txns=currentFilter==="Todas"?D.m2.txns:D.m2.txns.filter(function(t){return t.ent===currentFilter});
     spData=[];
     for(var ci=0;ci<cd.length;ci++){
       var mon=cd[ci].m;var cumI=0,spVal=0;
-      var txns=currentFilter==="Todas"?D.m2.txns:D.m2.txns.filter(function(t){return t.ent===currentFilter});
       for(var ti=0;ti<txns.length;ti++){
-        var tx=txns[ti];if(tx.oc==="C"&&tx.sm&&tx.sm<=mon)continue;
+        var tx=txns[ti];if(tx.oc!=="O")continue;
         if(!tx.bm||tx.bm>mon)continue;
         cumI+=tx.inv;
         var spAt=sp[tx.bm];
@@ -762,13 +741,12 @@ function renderMod2Chart(){
 
   M2.chartPerf=new Chart(document.getElementById("chart-perf"),{type:"line",data:{labels:labels,datasets:datasets},options:{responsive:true,maintainAspectRatio:false,interaction:{mode:"index",intersect:false},scales:{x:{ticks:{font:{size:10},color:"#8b8fa3",maxTicksLimit:12},grid:{color:"#1a1a1a"}},y:{ticks:{font:{size:10},color:"#8b8fa3",callback:function(v){return v>=1000000?fmt(v/1000000,1)+"M":v>=1000?fmt(v/1000)+"K":fmt(v)}},grid:{color:"#1a1a1a"}}},plugins:{legend:{display:false},tooltip:{backgroundColor:"#1a1a1a",borderColor:"#2a2a2a",borderWidth:1,titleColor:"#8b8fa3",bodyColor:"#e8e9ed",callbacks:{label:function(ctx){return ctx.dataset.label+": "+fE(ctx.raw)}}}}}});
 
-  // Legend
   var leg=document.getElementById("mod2-legend");
   leg.innerHTML='<div class="mod2-legend-item"><div class="mod2-legend-line" style="background:#8b8fa3"></div>Investido</div>'+
     (portData?'<div class="mod2-legend-item"><div class="mod2-legend-line" style="background:#818cf8"></div>Portfolio</div>':'')+
     '<div class="mod2-legend-item"><div class="mod2-legend-line" style="background:#34d399"></div>Se IWDA</div>'+
     (spData?'<div class="mod2-legend-item"><div class="mod2-legend-line" style="background:#f59e0b"></div>Se S&P 500 EUR</div>':'');
-  document.getElementById("mod2-chart-note").textContent=portData?"":"Clica \"Carregar Benchmarks\" para ver a curva real do portfolio e S&P 500";
+  document.getElementById("mod2-chart-note").textContent=portData?"":"Clica \"Carregar Benchmarks\" para ver a curva do portfolio e S&P 500";
 }
 
 function renderMod2Table(){
