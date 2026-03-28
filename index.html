@@ -954,24 +954,45 @@ function loadRiskData(){
   btn.disabled=true;btn.textContent="A carregar...";
   var prog=document.getElementById("risk-progress");prog.classList.remove("hidden");
   prog.textContent="IWDA histórico...";
-  var url="https://corsproxy.io/?url="+encodeURIComponent("https://query1.finance.yahoo.com/v8/finance/chart/IWDA.AS?range=max&interval=1mo");
-  fetch(url).then(function(r){return r.json()}).then(function(data){
-    if(!data||!data.chart||!data.chart.result||!data.chart.result[0]){throw new Error("Sem dados")}
-    var res=data.chart.result[0];
-    var ts=res.timestamp||[];
-    var cl=res.indicators.quote[0].close||[];
-    // Build monthly IWDA series: {monthKey -> price}
+  // Fetch monthly (long history) + daily (last 3 months for recent detail)
+  var urlMo="https://corsproxy.io/?url="+encodeURIComponent("https://query1.finance.yahoo.com/v8/finance/chart/IWDA.AS?range=max&interval=1mo");
+  var urlDay="https://corsproxy.io/?url="+encodeURIComponent("https://query1.finance.yahoo.com/v8/finance/chart/IWDA.AS?range=3mo&interval=1d");
+  Promise.all([fetch(urlMo).then(function(r){return r.json()}),fetch(urlDay).then(function(r){return r.json()})]).then(function(results){
+    var dataMo=results[0],dataDay=results[1];
+    if(!dataMo||!dataMo.chart||!dataMo.chart.result||!dataMo.chart.result[0])throw new Error("Sem dados mensais");
+    var resMo=dataMo.chart.result[0];
+    var tsMo=resMo.timestamp||[];var clMo=resMo.indicators.quote[0].close||[];
+    // Build monthly IWDA series
     var iwdaMonthly={};
-    for(var i=0;i<ts.length;i++){
-      if(cl[i]==null)continue;
-      var d=new Date(ts[i]*1000);
+    for(var i=0;i<tsMo.length;i++){
+      if(clMo[i]==null)continue;
+      var d=new Date(tsMo[i]*1000);
       var mk=d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0");
-      iwdaMonthly[mk]=cl[i];
+      iwdaMonthly[mk]=clMo[i];
     }
-    // Add current month with current IWDA price from Excel
-    var now=new Date();var nowK=now.getFullYear()+"-"+String(now.getMonth()+1).padStart(2,"0");
-    if(D.m2.iwdaNow)iwdaMonthly[nowK]=D.m2.iwdaNow;
-    // Generate sorted month list
+    // Build daily IWDA series for last 3 months
+    var iwdaDaily=[];
+    if(dataDay&&dataDay.chart&&dataDay.chart.result&&dataDay.chart.result[0]){
+      var resDay=dataDay.chart.result[0];
+      var tsDay=resDay.timestamp||[];var clDay=resDay.indicators.quote[0].close||[];
+      for(var j=0;j<tsDay.length;j++){
+        if(clDay[j]==null)continue;
+        var dd=new Date(tsDay[j]*1000);
+        iwdaDaily.push({d:dd.getFullYear()+"-"+String(dd.getMonth()+1).padStart(2,"0")+"-"+String(dd.getDate()).padStart(2,"0"),p:clDay[j],mk:dd.getFullYear()+"-"+String(dd.getMonth()+1).padStart(2,"0")});
+      }
+    }
+    // Find cutoff: 3 months ago — use monthly data up to this point, daily after
+    var now=new Date();
+    var cutY=now.getFullYear(),cutM=now.getMonth()-2;if(cutM<1){cutM+=12;cutY--}
+    var cutoff=cutY+"-"+String(cutM).padStart(2,"0");
+    // Remove monthly data points after cutoff (they'll be replaced by daily)
+    var monthlyKeys=Object.keys(iwdaMonthly).sort();
+    for(var mk2=0;mk2<monthlyKeys.length;mk2++){
+      if(monthlyKeys[mk2]>cutoff)delete iwdaMonthly[monthlyKeys[mk2]];
+    }
+    // Add current IWDA from Excel as fallback
+    var nowK=now.getFullYear()+"-"+String(now.getMonth()+1).padStart(2,"0");
+    if(D.m2.iwdaNow&&!iwdaMonthly[nowK])iwdaMonthly[nowK]=D.m2.iwdaNow;
     var allMonths=Object.keys(iwdaMonthly).sort();
     // Interpolate missing months
     function interpIWDA(mk){
@@ -985,52 +1006,67 @@ function loadRiskData(){
       if(!after)return iwdaMonthly[before];
       if(before===after)return iwdaMonthly[before];
       var bi=allMonths.indexOf(before),ai=allMonths.indexOf(after);
-      var ci=0;for(var j=0;j<allMonths.length;j++){if(allMonths[j]===mk){ci=j;break}else if(allMonths[j]>mk){ci=j;break}}
+      var ci=0;for(var jj=0;jj<allMonths.length;jj++){if(allMonths[jj]===mk){ci=jj;break}else if(allMonths[jj]>mk){ci=jj;break}}
       var frac=(ci-bi)/(ai-bi);
       return iwdaMonthly[before]+frac*(iwdaMonthly[after]-iwdaMonthly[before]);
     }
     prog.textContent="A calcular...";
     // Calculate for all entities
     var entities=["all"].concat(Object.keys(D.es));
-    var results={};
+    var riskResults={};
     for(var ei=0;ei<entities.length;ei++){
       var ent=entities[ei];
       var txns=ent==="all"?D.m2.txns:D.m2.txns.filter(function(t){return t.ent===ent});
       if(txns.length===0)continue;
-      // Find earliest month
       var earliest="9999";
       for(var ti=0;ti<txns.length;ti++){if(txns[ti].bm&&txns[ti].bm<earliest)earliest=txns[ti].bm}
-      // Build all months from earliest to now
+      // Build monthly curve up to cutoff
       var months=[];
-      var sy=parseInt(earliest.split("-")[0]),sm=parseInt(earliest.split("-")[1]);
-      var ey=now.getFullYear(),em=now.getMonth()+1;
-      var cy=sy,cm=sm;
-      while(cy<ey||(cy===ey&&cm<=em)){months.push(cy+"-"+String(cm).padStart(2,"0"));cm++;if(cm>12){cm=1;cy++}}
-      // Compute IWDA-based curve for each month (Se IWDA value)
+      var sy=parseInt(earliest.split("-")[0]),sm2=parseInt(earliest.split("-")[1]);
+      var ey=parseInt(cutoff.split("-")[0]),em2=parseInt(cutoff.split("-")[1]);
+      var cy=sy,cm=sm2;
+      while(cy<ey||(cy===ey&&cm<=em2)){months.push(cy+"-"+String(cm).padStart(2,"0"));cm++;if(cm>12){cm=1;cy++}}
       var curve=[];
       for(var mi=0;mi<months.length;mi++){
-        var mk=months[mi];
-        var iwdaM=interpIWDA(mk);if(!iwdaM)continue;
+        var mkk=months[mi];
+        var iwdaM=interpIWDA(mkk);if(!iwdaM)continue;
         var totalV=0,totalI=0;
         for(var tj=0;tj<txns.length;tj++){
           var tx=txns[tj];
-          if(!tx.bm||tx.bm>mk)continue;
-          if(tx.oc==="C"&&tx.sm&&tx.sm<=mk)continue;
+          if(!tx.bm||tx.bm>mkk)continue;
+          if(tx.oc==="C"&&tx.sm&&tx.sm<=mkk)continue;
           if(!tx.iwC||tx.iwC<=0)continue;
           totalV+=tx.inv*(iwdaM/tx.iwC);
           totalI+=tx.inv;
         }
-        if(totalI>0)curve.push({m:mk,v:totalV,inv:totalI});
+        if(totalI>0)curve.push({m:mkk,v:totalV,inv:totalI,isDaily:false});
+      }
+      // Add daily points for last 3 months
+      for(var di=0;di<iwdaDaily.length;di++){
+        var dp=iwdaDaily[di];
+        var totalVd=0,totalId=0;
+        for(var tj2=0;tj2<txns.length;tj2++){
+          var tx2=txns[tj2];
+          if(!tx2.bm||tx2.bm>dp.mk)continue;
+          if(tx2.oc==="C"&&tx2.sm&&tx2.sm<=dp.mk)continue;
+          if(!tx2.iwC||tx2.iwC<=0)continue;
+          totalVd+=tx2.inv*(dp.p/tx2.iwC);
+          totalId+=tx2.inv;
+        }
+        if(totalId>0)curve.push({m:dp.d,v:totalVd,inv:totalId,isDaily:true});
       }
       if(curve.length<4)continue;
-      // Modified Dietz monthly TWR returns (adjusts for cashflows)
+      // Compute returns: monthly for monthly points, daily for daily points
+      // For vol/sharpe we use only monthly returns (consistent basis)
+      // For drawdown we use the full curve (monthly + daily) for precision
       var twrReturns=[];
-      for(var ri=1;ri<curve.length;ri++){
-        var cf=curve[ri].inv-curve[ri-1].inv;
-        var denom=curve[ri-1].v+0.5*cf;
+      var monthlyOnly=curve.filter(function(c){return!c.isDaily});
+      for(var ri=1;ri<monthlyOnly.length;ri++){
+        var cf=monthlyOnly[ri].inv-monthlyOnly[ri-1].inv;
+        var denom=monthlyOnly[ri-1].v+0.5*cf;
         if(denom>0){
-          var modRet=(curve[ri].v-curve[ri-1].v-cf)/denom;
-          twrReturns.push({m:curve[ri].m,r:modRet});
+          var modRet=(monthlyOnly[ri].v-monthlyOnly[ri-1].v-cf)/denom;
+          twrReturns.push({m:monthlyOnly[ri].m,r:modRet});
         }
       }
       if(twrReturns.length<3)continue;
@@ -1041,34 +1077,30 @@ function loadRiskData(){
       var meanR=sumR/n;var variance=sumR2/n-meanR*meanR;
       var monthlyVol=Math.sqrt(variance);
       var annVol=monthlyVol*Math.sqrt(12)*100;
-      // Annualized return (geometric)
       var cumRet=1;for(var gi=0;gi<n;gi++)cumRet*=(1+twrReturns[gi].r);
       var annRet=(Math.pow(cumRet,12/n)-1)*100;
-      // Sharpe (risk-free = 3%)
       var sharpe=annVol>0?(annRet-3)/annVol:0;
-      // Max Drawdown from cumulative curve
-      var cumCurve=[1];for(var ci2=0;ci2<n;ci2++)cumCurve.push(cumCurve[cumCurve.length-1]*(1+twrReturns[ci2].r));
-      var peak=cumCurve[0],maxDD=0;
+      // Max Drawdown: use FULL curve (monthly + daily) for accurate recent DD
+      var peak2=curve[0].v,maxDD=0;
       var ddSeries=[];
-      for(var di=0;di<cumCurve.length;di++){
-        if(cumCurve[di]>peak)peak=cumCurve[di];
-        var dd2=(cumCurve[di]-peak)/peak*100;
+      for(var di2=0;di2<curve.length;di2++){
+        if(curve[di2].v>peak2)peak2=curve[di2].v;
+        var dd2=(curve[di2].v-peak2)/peak2*100;
         if(dd2<maxDD)maxDD=dd2;
-        var lbl=di===0?curve[0].m:twrReturns[di-1].m;
-        ddSeries.push({d:lbl,dd:dd2});
+        ddSeries.push({d:curve[di2].m,dd:dd2});
       }
-      // Rolling 12-month volatility for chart
+      // Rolling 12-month volatility for chart (monthly returns only)
       var rollingVol=[];
       var winSize=Math.min(12,Math.floor(n/2));if(winSize<3)winSize=3;
       for(var rvi=winSize-1;rvi<n;rvi++){
-        var ws=0,ws2=0;
-        for(var wi=rvi-winSize+1;wi<=rvi;wi++){ws+=twrReturns[wi].r;ws2+=twrReturns[wi].r*twrReturns[wi].r}
-        var wMean=ws/winSize;var wVar=ws2/winSize-wMean*wMean;
+        var wss=0,wss2=0;
+        for(var wi=rvi-winSize+1;wi<=rvi;wi++){wss+=twrReturns[wi].r;wss2+=twrReturns[wi].r*twrReturns[wi].r}
+        var wMean=wss/winSize;var wVar=wss2/winSize-wMean*wMean;
         rollingVol.push({d:twrReturns[rvi].m,v:Math.sqrt(wVar)*Math.sqrt(12)*100});
       }
-      results[ent]={vol:annVol,sharpe:sharpe,maxDD:maxDD,annRet:annRet,rollingVol:rollingVol,ddSeries:ddSeries};
+      riskResults[ent]={vol:annVol,sharpe:sharpe,maxDD:maxDD,annRet:annRet,rollingVol:rollingVol,ddSeries:ddSeries};
     }
-    M3.riskData=results;
+    M3.riskData=riskResults;
     renderMod3();
     btn.textContent="Volatilidade carregada";btn.style.background="rgba(52,211,153,.15)";btn.style.borderColor="rgba(52,211,153,.3)";btn.style.color="#34d399";
     prog.classList.add("hidden");
@@ -1092,18 +1124,19 @@ function renderMod3VolDD(){
   document.getElementById("mod3-dd-card").style.display="block";
   document.getElementById("mod3-vol-title").textContent="Volatilidade Anualizada \u2014 proxy IWDA (12m rolling)"+(currentFilter!=="Todas"?" \u2014 "+currentFilter:"");
   document.getElementById("mod3-dd-title").textContent="Drawdown \u2014 proxy IWDA"+(currentFilter!=="Todas"?" \u2014 "+currentFilter:"");
-  // Subsample for performance: max 200 points
+  // Subsample for performance: max 200 points for vol, 300 for DD (has daily data)
   function subsample(arr,maxPts){if(arr.length<=maxPts)return arr;var step=Math.ceil(arr.length/maxPts);var out=[];for(var i=0;i<arr.length;i+=step)out.push(arr[i]);if(out[out.length-1]!==arr[arr.length-1])out.push(arr[arr.length-1]);return out}
+  function fmtDateLabel(d){var p=d.split("-");if(p.length>=2)return M2_MONTHS_PT[parseInt(p[1])-1]+" "+p[0].slice(2);return d}
   // Volatility chart
   var volData=subsample(rv.rollingVol,200);
-  var volLabels=volData.map(function(d){var p=d.d.split("-");return M2_MONTHS_PT[parseInt(p[1])-1]+" "+p[0].slice(2)});
+  var volLabels=volData.map(function(d){return fmtDateLabel(d.d)});
   if(M3.chartVol)M3.chartVol.destroy();
   M3.chartVol=new Chart(document.getElementById("chart-vol"),{type:"line",data:{labels:volLabels,datasets:[{data:volData.map(function(d){return Math.round(d.v*100)/100}),borderColor:"#818cf8",backgroundColor:"rgba(129,140,248,0.1)",fill:true,borderWidth:2,pointRadius:0,tension:.3}]},options:{responsive:true,maintainAspectRatio:false,scales:{x:{ticks:{font:{size:10},color:"#8b8fa3",maxTicksLimit:10},grid:{color:"#1a1a1a"}},y:{ticks:{font:{size:10},color:"#8b8fa3",callback:function(v){return fmt(v,1)+"%"}},grid:{color:"#1a1a1a"}}},plugins:{legend:{display:false},tooltip:{backgroundColor:"#1a1a1a",borderColor:"#2a2a2a",borderWidth:1,titleColor:"#8b8fa3",bodyColor:"#e8e9ed",callbacks:{label:function(ctx){return"Volatilidade: "+fmt(ctx.raw,2)+"%"}}}}}});
-  // Drawdown chart
-  var ddData=subsample(rv.ddSeries,200);
-  var ddLabels=ddData.map(function(d){var p=d.d.split("-");return M2_MONTHS_PT[parseInt(p[1])-1]+" "+p[0].slice(2)});
+  // Drawdown chart (more points due to daily data at the end)
+  var ddData=subsample(rv.ddSeries,300);
+  var ddLabels=ddData.map(function(d){return fmtDateLabel(d.d)});
   if(M3.chartDD)M3.chartDD.destroy();
-  M3.chartDD=new Chart(document.getElementById("chart-dd"),{type:"line",data:{labels:ddLabels,datasets:[{data:ddData.map(function(d){return Math.round(d.dd*100)/100}),borderColor:"#f87171",backgroundColor:"rgba(248,113,113,0.1)",fill:true,borderWidth:2,pointRadius:0,tension:.3}]},options:{responsive:true,maintainAspectRatio:false,scales:{x:{ticks:{font:{size:10},color:"#8b8fa3",maxTicksLimit:10},grid:{color:"#1a1a1a"}},y:{ticks:{font:{size:10},color:"#8b8fa3",callback:function(v){return fmt(v,1)+"%"}},grid:{color:"#1a1a1a"}}},plugins:{legend:{display:false},tooltip:{backgroundColor:"#1a1a1a",borderColor:"#2a2a2a",borderWidth:1,titleColor:"#8b8fa3",bodyColor:"#e8e9ed",callbacks:{label:function(ctx){return"Drawdown: "+fmt(ctx.raw,2)+"%"}}}}}});
+  M3.chartDD=new Chart(document.getElementById("chart-dd"),{type:"line",data:{labels:ddLabels,datasets:[{data:ddData.map(function(d){return Math.round(d.dd*100)/100}),borderColor:"#f87171",backgroundColor:"rgba(248,113,113,0.1)",fill:true,borderWidth:2,pointRadius:0,tension:.3}]},options:{responsive:true,maintainAspectRatio:false,scales:{x:{ticks:{font:{size:10},color:"#8b8fa3",maxTicksLimit:12},grid:{color:"#1a1a1a"}},y:{ticks:{font:{size:10},color:"#8b8fa3",callback:function(v){return fmt(v,1)+"%"}},grid:{color:"#1a1a1a"}}},plugins:{legend:{display:false},tooltip:{backgroundColor:"#1a1a1a",borderColor:"#2a2a2a",borderWidth:1,titleColor:"#8b8fa3",bodyColor:"#e8e9ed",callbacks:{label:function(ctx){return"Drawdown: "+fmt(ctx.raw,2)+"%"}}}}}});
 }
 
 // Event listeners
