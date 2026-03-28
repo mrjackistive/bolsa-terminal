@@ -245,6 +245,12 @@ html,body{background:#000!important;color:#e8e9ed;font-family:'DM Sans','Segoe U
         </div>
       </div>
       <div class="header-btns">
+        <div id="header-var" style="display:none;text-align:right;margin-right:8px">
+          <div style="display:flex;gap:12px;align-items:baseline">
+            <div><span style="font-size:10px;color:#8b8fa3;text-transform:uppercase;letter-spacing:.05em">Hoje</span> <span id="hdr-var-eur" style="font-size:14px;font-weight:700"></span> <span id="hdr-var-pct" style="font-size:12px;font-weight:600"></span></div>
+            <div><span style="font-size:10px;color:#8b8fa3;text-transform:uppercase;letter-spacing:.05em">Beta</span> <span id="hdr-beta" style="font-size:14px;font-weight:700;color:#e8e9ed"></span></div>
+          </div>
+        </div>
         <label class="btn btn-file" title="Carregar ficheiro">⬆<input type="file" accept=".xlsx,.xlsm" id="file-input-header"></label>
         <button class="btn" id="btn-refresh" title="Actualizar cotações">⟳</button>
         <span class="progress-text hidden" id="progress-text"></span>
@@ -573,7 +579,25 @@ function parseExcel(data){
   }
   // SP500 summary
   var m2sp500sum=hasBench?{inv:m2tInv,val:m2tSP500,ret:m2tInv?((m2tSP500/m2tInv)-1)*100:0}:null;
-  return{dt:new Date().toISOString().split("T")[0],ti:Math.round(totalI*100)/100,tv:Math.round(totalV*100)/100,tgp:Math.round(totalGP*100)/100,tgpp:totalI?Math.round((totalV/totalI-1)*10000)/100:0,tec:Math.round(totalEC*100)/100,pos:posArr,sp:splits,es:es,cx:cxAll,cxe:cxEnt,
+  // Parse Carteira sheet for betas
+  var betaMap={};
+  var wsCart=wb.Sheets["Carteira"];
+  if(wsCart){
+    var cRows=XLSX.utils.sheet_to_json(wsCart,{header:1,defval:null,rawNumbers:true});
+    var cHdr=-1;
+    for(var ci=0;ci<Math.min(cRows.length,10);ci++){if(cRows[ci]&&cRows[ci][0]==="ISIN"){cHdr=ci;break}}
+    if(cHdr>=0){
+      var betaCol=-1;
+      for(var cj=0;cj<cRows[cHdr].length;cj++){if(cRows[cHdr][cj]&&String(cRows[cHdr][cj]).toLowerCase()==="beta"){betaCol=cj;break}}
+      if(betaCol>=0){
+        for(var cr=cHdr+1;cr<cRows.length;cr++){
+          var cRow=cRows[cr];if(!cRow||!cRow[0])continue;
+          var bVal=cRow[betaCol];if(bVal!=null&&typeof bVal==="number")betaMap[cRow[0]]=bVal;
+        }
+      }
+    }
+  }
+  return{dt:new Date().toISOString().split("T")[0],ti:Math.round(totalI*100)/100,tv:Math.round(totalV*100)/100,tgp:Math.round(totalGP*100)/100,tgpp:totalI?Math.round((totalV/totalI-1)*10000)/100:0,tec:Math.round(totalEC*100)/100,pos:posArr,sp:splits,es:es,cx:cxAll,cxe:cxEnt,betas:betaMap,
     m2:{txns:m2txns,ents:m2ents,chart:m2chart,iwdaPrices:m2iwdaPrices,months:m2months,sp5Monthly:sp5Monthly,
       iwdaNow:iwdaNowVal,
       sp500:m2sp500sum,
@@ -605,7 +629,7 @@ function renderDashboard(){
   document.getElementById("dashboard").classList.remove("hidden");
   document.getElementById("data-date").textContent=D.dt.split("-").reverse().join("/");
   document.getElementById("footer-date").textContent=D.dt.split("-").reverse().join("/");
-  renderFilters();renderKPIs();renderEntityChart();renderCxChart();renderPositions();renderMod2();renderMod3();renderMod4();
+  renderFilters();renderKPIs();renderEntityChart();renderCxChart();renderPositions();renderMod2();renderMod3();renderMod4();renderHeader();
 }
 
 function getSummary(){
@@ -629,20 +653,68 @@ function renderFilters(){
   for(var i=0;i<ents.length;i++){
     var btn=document.createElement("button");btn.className="filter-btn"+(currentFilter===ents[i]?" active":"");
     btn.textContent=ents[i];btn.setAttribute("data-ent",ents[i]);
-    btn.onclick=function(){currentFilter=this.getAttribute("data-ent");showAll=false;renderFilters();renderKPIs();renderCxChart();renderPositions();renderMod2();renderMod3();renderMod4()};
+    btn.onclick=function(){currentFilter=this.getAttribute("data-ent");showAll=false;renderFilters();renderKPIs();renderCxChart();renderPositions();renderMod2();renderMod3();renderMod4();renderHeader()};
     el.appendChild(btn);
   }
 }
 
 function renderKPIs(){
   var s=getSummary();var pos=getPositions();
+  // Variação Hoje: weighted % and € from vh (live or file)
+  var vh=calcVarHoje(pos,s.v);
   var el=document.getElementById("kpis");
   el.innerHTML=[
     kpiHTML("$","Valor Actual",fE(s.v),fP(s.gpp)+" desde início",s.gpp),
     kpiHTML("⊞","Investimento",fE(s.i),pos.length+" posições",0),
     kpiHTML(s.gp>=0?"↗":"↘","Mais/Menos Valia",(s.gp>=0?"+":"")+fE(s.gp),fP(s.gpp),s.gp),
-    kpiHTML("⊕","Efeito Cambial",fE(s.ec),s.i?fP((s.ec/s.i)*100):"",s.ec)
+    kpiHTML("⊕","Efeito Cambial",fE(s.ec),s.i?fP((s.ec/s.i)*100):"",s.ec),
+    kpiHTML(vh.eur>=0?"↗":"↘","Variação Hoje",(vh.eur>=0?"+":"")+fE(vh.eur),fP(vh.pct)+" ponderada",vh.eur)
   ].join("");
+}
+
+function calcVarHoje(pos,totalV){
+  var totalVarEur=0,weightedPct=0;
+  for(var i=0;i<pos.length;i++){
+    var p=pos[i];
+    if(p.vh!=null&&totalV>0){
+      var w=p.v/totalV;
+      weightedPct+=w*p.vh;
+      // var€ = valor_actual * (vh%/100) / (1 + vh%/100)
+      var vhDec=p.vh/100;
+      totalVarEur+=p.v*(vhDec/(1+vhDec));
+    }
+  }
+  return{eur:Math.round(totalVarEur*100)/100,pct:Math.round(weightedPct*100)/100};
+}
+
+function calcBeta(pos,totalV){
+  if(!D||!D.betas)return null;
+  var wb=0,cov=0;
+  for(var i=0;i<pos.length;i++){
+    var p=pos[i];
+    if(D.betas[p.isin]!=null&&totalV>0){
+      wb+=(p.v/totalV)*D.betas[p.isin];
+      cov+=p.v;
+    }
+  }
+  if(cov/totalV<0.5)return null;// less than 50% coverage
+  return Math.round(wb*10000)/10000;
+}
+
+function renderHeader(){
+  var pos=getPositions();var s=getSummary();
+  var vh=calcVarHoje(pos,s.v);
+  var beta=calcBeta(pos,s.v);
+  var hdrDiv=document.getElementById("header-var");
+  var hdrEur=document.getElementById("hdr-var-eur");
+  var hdrPct=document.getElementById("hdr-var-pct");
+  var hdrBeta=document.getElementById("hdr-beta");
+  if(vh.eur===0&&vh.pct===0&&beta===null){hdrDiv.style.display="none";return}
+  hdrDiv.style.display="";
+  var vhCol=vh.eur>=0?"#34d399":"#f87171";
+  hdrEur.style.color=vhCol;hdrEur.textContent=(vh.eur>=0?"+":"")+fE(vh.eur);
+  hdrPct.style.color=vhCol;hdrPct.textContent=fP(vh.pct);
+  if(beta!==null){hdrBeta.textContent=fmt(beta,2)}else{hdrBeta.textContent="—"}
 }
 
 function kpiHTML(icon,label,value,sub,trend){
@@ -735,7 +807,7 @@ function fetchQuotes(){
         var nEs={},nCxe={};for(var e2 in D.es){var eI=0,eV=0,eEC=0,eTT=0;nCxe[e2]={};for(var i3 in nSp){if(nSp[i3][e2]){var s=nSp[i3][e2];eI+=s[1];eV+=s[2];eEC+=s[4];eTT++;var pm2="USD";for(var px=0;px<newPos.length;px++){if(newPos[px].isin===i3){pm2=newPos[px].me;break}}nCxe[e2][pm2]=(nCxe[e2][pm2]||0)+s[2]}}nEs[e2]={tt:eTT,i:Math.round(eI*100)/100,v:Math.round(eV*100)/100,gp:Math.round((eV-eI)*100)/100,gpp:eI?Math.round((eV/eI-1)*10000)/100:0,ec:Math.round(eEC*100)/100}}
         var nCx={};for(var px2=0;px2<newPos.length;px2++){var pm=newPos[px2].me;var pxv=newPos[px2].v;if(!isNaN(pxv))nCx[pm]=(nCx[pm]||0)+pxv}
         var nTV=0,nTGP=0,nTEC=0;for(var te in nEs){nTV+=nEs[te].v;nTGP+=nEs[te].gp;nTEC+=nEs[te].ec}
-        D={dt:new Date().toISOString().split("T")[0],ti:D.ti,tv:Math.round(nTV*100)/100,tgp:Math.round(nTGP*100)/100,tgpp:D.ti?Math.round((nTV/D.ti-1)*10000)/100:0,tec:Math.round(nTEC*100)/100,pos:newPos,sp:nSp,es:nEs,cx:nCx,cxe:nCxe,m2:D.m2};
+        D={dt:new Date().toISOString().split("T")[0],ti:D.ti,tv:Math.round(nTV*100)/100,tgp:Math.round(nTGP*100)/100,tgpp:D.ti?Math.round((nTV/D.ti-1)*10000)/100:0,tec:Math.round(nTEC*100)/100,pos:newPos,sp:nSp,es:nEs,cx:nCx,cxe:nCxe,betas:D.betas,m2:D.m2};
         renderDashboard();prog.classList.add("hidden");btn.classList.remove("active");
         showMsg("ok","Cotações actualizadas: "+Object.keys(prices).length+" títulos, "+Object.keys(fxRates).length+" câmbios");
         return;
