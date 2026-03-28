@@ -894,7 +894,8 @@ function renderMod3KPIs(pos,s){
     var filtKey=currentFilter==="Todas"?"all":currentFilter;
     var rv=rd[filtKey];
     if(rv){
-      volHTML='<div class="mod3-kpi"><div class="mod3-kpi-header"><div class="kpi-icon">📉</div><div class="kpi-label">Volatilidade / Sharpe <span style="font-size:9px;color:#8b8fa3;font-weight:400">(proxy IWDA)</span></div></div><div class="mod3-kpi-value">'+fmt(rv.vol,1)+'%</div><div class="mod3-kpi-sub">Sharpe: '+fmt(rv.sharpe,2)+' | Max DD: '+fmt(rv.maxDD,1)+'%</div></div>';
+      var curDD=rv.ddSeries.length>0?rv.ddSeries[rv.ddSeries.length-1].dd:0;
+      volHTML='<div class="mod3-kpi"><div class="mod3-kpi-header"><div class="kpi-icon">📉</div><div class="kpi-label">Volatilidade / Sharpe <span style="font-size:9px;color:#8b8fa3;font-weight:400">(proxy IWDA)</span></div></div><div class="mod3-kpi-value">'+fmt(rv.vol,1)+'%</div><div class="mod3-kpi-sub">Sharpe: '+fmt(rv.sharpe,2)+' | Max DD: '+fmt(rv.maxDD,1)+'% | DD actual: '+fmt(curDD,1)+'%</div></div>';
     }
   }
   var el=document.getElementById("mod3-kpis");
@@ -1136,7 +1137,11 @@ function renderMod3VolDD(){
   var ddData=subsample(rv.ddSeries,300);
   var ddLabels=ddData.map(function(d){return fmtDateLabel(d.d)});
   if(M3.chartDD)M3.chartDD.destroy();
-  M3.chartDD=new Chart(document.getElementById("chart-dd"),{type:"line",data:{labels:ddLabels,datasets:[{data:ddData.map(function(d){return Math.round(d.dd*100)/100}),borderColor:"#f87171",backgroundColor:"rgba(248,113,113,0.1)",fill:true,borderWidth:2,pointRadius:0,tension:.3}]},options:{responsive:true,maintainAspectRatio:false,scales:{x:{ticks:{font:{size:10},color:"#8b8fa3",maxTicksLimit:12},grid:{color:"#1a1a1a"}},y:{ticks:{font:{size:10},color:"#8b8fa3",callback:function(v){return fmt(v,1)+"%"}},grid:{color:"#1a1a1a"}}},plugins:{legend:{display:false},tooltip:{backgroundColor:"#1a1a1a",borderColor:"#2a2a2a",borderWidth:1,titleColor:"#8b8fa3",bodyColor:"#e8e9ed",callbacks:{label:function(ctx){return"Drawdown: "+fmt(ctx.raw,2)+"%"}}}}}});
+  var ddValues=ddData.map(function(d){return Math.round(d.dd*100)/100});
+  var ddPointRadius=ddValues.map(function(v,i){return i===ddValues.length-1?5:0});
+  var ddPointBg=ddValues.map(function(v,i){return i===ddValues.length-1?"#f87171":"transparent"});
+  var lastDDval=ddValues[ddValues.length-1];
+  M3.chartDD=new Chart(document.getElementById("chart-dd"),{type:"line",data:{labels:ddLabels,datasets:[{data:ddValues,borderColor:"#f87171",backgroundColor:"rgba(248,113,113,0.1)",fill:true,borderWidth:2,pointRadius:ddPointRadius,pointBackgroundColor:ddPointBg,pointBorderColor:ddPointBg,tension:.3}]},options:{responsive:true,maintainAspectRatio:false,scales:{x:{ticks:{font:{size:10},color:"#8b8fa3",maxTicksLimit:12},grid:{color:"#1a1a1a"}},y:{ticks:{font:{size:10},color:"#8b8fa3",callback:function(v){return fmt(v,1)+"%"}},grid:{color:"#1a1a1a"}}},plugins:{legend:{display:false},tooltip:{backgroundColor:"#1a1a1a",borderColor:"#2a2a2a",borderWidth:1,titleColor:"#8b8fa3",bodyColor:"#e8e9ed",callbacks:{label:function(ctx){return"Drawdown: "+fmt(ctx.raw,2)+"%"}}},annotation:false}},plugins:[{id:"ddLabel",afterDraw:function(chart){var meta=chart.getDatasetMeta(0);var last=meta.data[meta.data.length-1];if(!last)return;var ctx2=chart.ctx;ctx2.save();ctx2.font="bold 11px DM Sans,sans-serif";ctx2.fillStyle="#f87171";ctx2.textAlign="left";ctx2.fillText(fmt(lastDDval,1)+"%",last.x+8,last.y+4);ctx2.restore()}}]});
 }
 
 // Event listeners
