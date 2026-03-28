@@ -185,6 +185,36 @@ html,body{background:#000!important;color:#e8e9ed;font-family:'DM Sans','Segoe U
 .mod3-load-btn{padding:8px 16px;border-radius:8px;background:rgba(99,102,241,.2);border:1px solid rgba(99,102,241,.3);color:#818cf8;cursor:pointer;font-size:12px;font-weight:600;font-family:inherit}
 .mod3-load-btn:hover{background:rgba(99,102,241,.3)}
 .mod3-load-btn:disabled{opacity:.5;cursor:default}
+.mod4-section{margin-top:8px}
+.mod4-kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px}
+.mod4-kpi{background:#111;border:1px solid #1a1a1a;border-radius:12px;padding:16px}
+.mod4-kpi-header{display:flex;align-items:center;gap:8px;margin-bottom:10px}
+.mod4-kpi-value{font-size:22px;font-weight:700}
+.mod4-kpi-sub{font-size:13px;margin-top:4px;font-weight:500;color:#8b8fa3}
+.mod4-bar{display:flex;align-items:center;gap:8px;margin-bottom:10px}
+.mod4-bar-cur{font-size:13px;font-weight:600;width:40px;flex-shrink:0}
+.mod4-bar-track{flex:1;height:10px;background:#1a1a1a;border-radius:99px;overflow:hidden;position:relative}
+.mod4-bar-fill-pos{height:100%;border-radius:99px;background:#34d399;position:absolute;top:0}
+.mod4-bar-fill-neg{height:100%;border-radius:99px;background:#f87171;position:absolute;top:0}
+.mod4-bar-val{font-size:12px;font-weight:500;width:90px;text-align:right;flex-shrink:0}
+.mod4-bar-pct{font-size:11px;color:#8b8fa3;width:50px;text-align:right;flex-shrink:0}
+.mod4-decomp-row{display:flex;align-items:center;gap:8px;margin-bottom:6px}
+.mod4-decomp-cur{font-size:13px;font-weight:600;width:40px;flex-shrink:0}
+.mod4-decomp-track{flex:1;height:16px;background:#1a1a1a;border-radius:4px;overflow:hidden;position:relative;display:flex}
+.mod4-decomp-seg{height:100%;transition:width .5s}
+.mod4-decomp-labels{display:flex;gap:12px;font-size:11px;width:180px;text-align:right;flex-shrink:0;justify-content:flex-end}
+@media(max-width:639px){.mod4-decomp-labels{width:140px;gap:6px;font-size:10px}}
+.mod4-detail-row{border-bottom:1px solid #1a1a1a;cursor:pointer;transition:background .2s}
+.mod4-detail-row:hover{background:#181818}
+.mod4-detail-row:last-child{border-bottom:none}
+.mod4-detail-main{display:flex;align-items:center;gap:8px;padding:10px 12px}
+.mod4-detail-sub{padding:4px 12px 12px;background:#0a0a0a}
+.mod4-detail-sub table{width:100%;border-collapse:collapse;font-size:12px}
+.mod4-detail-sub th{text-align:right;padding:6px 8px;color:#8b8fa3;font-weight:500;font-size:10px;text-transform:uppercase;letter-spacing:.05em;border-bottom:1px solid #1a1a1a}
+.mod4-detail-sub th:first-child{text-align:left}
+.mod4-detail-sub td{padding:6px 8px;text-align:right;border-bottom:1px solid #1a1a1a}
+.mod4-detail-sub td:first-child{text-align:left}
+.mod4-detail-sub tr:last-child td{border-bottom:none}
 </style>
 </head>
 <body>
@@ -355,7 +385,48 @@ html,body{background:#000!important;color:#e8e9ed;font-family:'DM Sans','Segoe U
         </div>
       </div>
     </div>
-    <div class="footer">Bolsa Terminal v2.3 — <span id="footer-date"></span></div>
+    <!-- MODULE 4: Exposição Cambial Detalhada -->
+    <hr class="mod2-separator">
+    <div class="mod4-section" id="mod4-section">
+      <div style="font-size:16px;font-weight:700;display:flex;align-items:center;gap:8px;margin-bottom:16px"><span style="color:#8b8fa3">💱</span> Exposição Cambial Detalhada</div>
+      <div class="mod4-kpis" id="mod4-kpis"></div>
+      <div class="charts" style="margin-top:12px">
+        <div class="card">
+          <div class="card-title"><span style="color:#8b8fa3">📊</span> <span id="mod4-impact-title">Impacto Cambial por Moeda</span></div>
+          <div id="mod4-impact-bars"></div>
+        </div>
+        <div class="card">
+          <div class="card-title"><span style="color:#8b8fa3">◐</span> <span id="mod4-decomp-title">Decomposição do G/P</span>
+            <span style="font-size:10px;color:#8b8fa3;font-weight:400;margin-left:auto">Activo vs Câmbio</span>
+          </div>
+          <div id="mod4-decomp-bars"></div>
+          <div style="display:flex;gap:16px;justify-content:center;margin-top:12px;font-size:11px;color:#8b8fa3">
+            <div style="display:flex;align-items:center;gap:6px"><div style="width:12px;height:12px;border-radius:2px;background:#818cf8"></div>G/P Activo</div>
+            <div style="display:flex;align-items:center;gap:6px"><div style="width:12px;height:12px;border-radius:2px;background:#f59e0b"></div>Ef. Cambial</div>
+          </div>
+        </div>
+      </div>
+      <div class="card" style="margin-top:12px" id="mod4-table-card">
+        <div style="font-size:14px;font-weight:600;margin-bottom:16px;display:flex;align-items:center;gap:8px">
+          <span style="color:#8b8fa3">⚖</span> <span id="mod4-table-title">Detalhe por Moeda</span>
+          <span style="font-size:10px;color:#8b8fa3;font-weight:400;margin-left:auto">Clica numa moeda para expandir</span>
+        </div>
+        <div id="mod4-detail-list"></div>
+      </div>
+      <div class="mod2-meth" style="margin-top:12px">
+        <button class="mod2-meth-btn" onclick="this.nextElementSibling.classList.toggle('hidden');this.querySelector('span:last-child').style.transform=this.nextElementSibling.classList.contains('hidden')?'rotate(0deg)':'rotate(180deg)'">
+          <span style="display:flex;align-items:center;gap:8px"><span style="color:#8b8fa3">ℹ</span> Metodologia</span>
+          <span style="color:#8b8fa3;font-size:12px;transition:transform .2s">▾</span>
+        </button>
+        <div class="mod2-meth-content hidden">
+          <p style="margin-bottom:8px"><strong style="color:#e8e9ed">Moeda Económica:</strong> A exposição cambial é determinada pelo país do ISIN, não pela moeda de cotação. Uma acção canadiana (ISIN CA...) cotada em EUR na Xetra tem exposição ao CAD, porque o negócio opera em dólares canadianos. Títulos da zona Euro (ISIN PT, DE, NL, FR, etc.) não têm risco cambial.</p>
+          <p style="margin-bottom:8px"><strong style="color:#e8e9ed">Efeito Cambial:</strong> Valor em euros calculado pelo Excel (coluna BP). Representa o ganho ou perda atribuível exclusivamente à variação cambial desde a data de compra. Um efeito negativo significa que o euro fortaleceu face à moeda do activo.</p>
+          <p style="margin-bottom:8px"><strong style="color:#e8e9ed">G/P Activo:</strong> G/P Total menos Efeito Cambial. É o retorno que terias obtido se o câmbio não tivesse variado — mede o desempenho puro do activo na sua moeda local.</p>
+          <p><strong style="color:#e8e9ed">Decomposição:</strong> Para cada moeda, mostra a proporção do G/P total que vem do retorno do activo vs do efeito cambial. Permite identificar se os ganhos (ou perdas) são do negócio ou do câmbio.</p>
+        </div>
+      </div>
+    </div>
+    <div class="footer">Bolsa Terminal v2.4 — <span id="footer-date"></span></div>
   </main>
 </div>
 
@@ -370,6 +441,7 @@ var YAHOO_VENTURE={TOI:1,LMN:1};
 var D=null, currentFilter="Todas", currentSort="value", showAll=false;
 var chartEntity=null, chartCx=null;
 var M2={bench:null,chartPerf:null,period:"ALL",sp500Bench:null};
+var fxRatesGlobal=null;
 
 function getYahooTicker(t,isin){var p=isin?isin.substring(0,2):"";if(p==="US"||p==="KY")return t;if(p==="IE")return t+".DE";if(p==="CA"&&YAHOO_VENTURE[t])return t+".V";if(YAHOO_SUFFIX[p])return t+YAHOO_SUFFIX[p];return t}
 function getMoedaEconomica(isin){if(!isin)return"EUR";var p=isin.substring(0,2);if(MOEDA_PAIS[p])return MOEDA_PAIS[p];if(ZONA_EURO[p])return"EUR";return"USD"}
@@ -531,7 +603,7 @@ function renderDashboard(){
   document.getElementById("dashboard").classList.remove("hidden");
   document.getElementById("data-date").textContent=D.dt.split("-").reverse().join("/");
   document.getElementById("footer-date").textContent=D.dt.split("-").reverse().join("/");
-  renderFilters();renderKPIs();renderEntityChart();renderCxChart();renderPositions();renderMod2();renderMod3();
+  renderFilters();renderKPIs();renderEntityChart();renderCxChart();renderPositions();renderMod2();renderMod3();renderMod4();
 }
 
 function getSummary(){
@@ -555,7 +627,7 @@ function renderFilters(){
   for(var i=0;i<ents.length;i++){
     var btn=document.createElement("button");btn.className="filter-btn"+(currentFilter===ents[i]?" active":"");
     btn.textContent=ents[i];btn.setAttribute("data-ent",ents[i]);
-    btn.onclick=function(){currentFilter=this.getAttribute("data-ent");showAll=false;renderFilters();renderKPIs();renderCxChart();renderPositions();renderMod2();renderMod3()};
+    btn.onclick=function(){currentFilter=this.getAttribute("data-ent");showAll=false;renderFilters();renderKPIs();renderCxChart();renderPositions();renderMod2();renderMod3();renderMod4()};
     el.appendChild(btn);
   }
 }
@@ -649,6 +721,7 @@ function fetchQuotes(){
   var fxPromises=fxPairs.map(function(pair){return fetchUrl(pair).then(function(meta){if(meta&&meta.regularMarketPrice){var cur=pair.replace("EUR","").replace("=X","");fxRates[cur]=meta.regularMarketPrice}})});
 
   Promise.all(fxPromises).then(function(){
+    fxRatesGlobal=fxRates;
     completed+=fxPairs.length;updateProg();
     var batches=[];for(var b=0;b<allYahoo.length;b+=5)batches.push(allYahoo.slice(b,b+5));
 
@@ -1142,6 +1215,121 @@ function renderMod3VolDD(){
   var ddPointBg=ddValues.map(function(v,i){return i===ddValues.length-1?"#f87171":"transparent"});
   var lastDDval=ddValues[ddValues.length-1];
   M3.chartDD=new Chart(document.getElementById("chart-dd"),{type:"line",data:{labels:ddLabels,datasets:[{data:ddValues,borderColor:"#f87171",backgroundColor:"rgba(248,113,113,0.1)",fill:true,borderWidth:2,pointRadius:ddPointRadius,pointBackgroundColor:ddPointBg,pointBorderColor:ddPointBg,tension:.3}]},options:{responsive:true,maintainAspectRatio:false,scales:{x:{ticks:{font:{size:10},color:"#8b8fa3",maxTicksLimit:12},grid:{color:"#1a1a1a"}},y:{ticks:{font:{size:10},color:"#8b8fa3",callback:function(v){return fmt(v,1)+"%"}},grid:{color:"#1a1a1a"}}},plugins:{legend:{display:false},tooltip:{backgroundColor:"#1a1a1a",borderColor:"#2a2a2a",borderWidth:1,titleColor:"#8b8fa3",bodyColor:"#e8e9ed",callbacks:{label:function(ctx){return"Drawdown: "+fmt(ctx.raw,2)+"%"}}},annotation:false}},plugins:[{id:"ddLabel",afterDraw:function(chart){var meta=chart.getDatasetMeta(0);var last=meta.data[meta.data.length-1];if(!last)return;var ctx2=chart.ctx;ctx2.save();ctx2.font="bold 11px DM Sans,sans-serif";ctx2.fillStyle="#f87171";ctx2.textAlign="left";ctx2.fillText(fmt(lastDDval,1)+"%",last.x+8,last.y+4);ctx2.restore()}}]});
+}
+
+// === MODULE 4: Exposição Cambial Detalhada ===
+function m4getData(){
+  if(!D)return null;
+  var pos=getPositions();
+  var s=getSummary();
+  // Aggregate by economic currency
+  var byCur={};
+  for(var i=0;i<pos.length;i++){
+    var p=pos[i];var me=p.me;
+    if(!byCur[me])byCur[me]={val:0,inv:0,gp:0,ec:0,n:0,positions:[]};
+    var c=byCur[me];c.val+=p.v;c.inv+=p.i;c.gp+=p.gp;c.ec+=p.ec;c.n++;
+    c.positions.push({t:p.t,isin:p.isin,inv:p.i,val:p.v,gp:p.gp,ec:p.ec,gpa:p.gp-p.ec});
+  }
+  // Sort positions within each currency by value desc
+  for(var cur in byCur){byCur[cur].positions.sort(function(a,b){return b.val-a.val})}
+  return{byCur:byCur,tv:s.v,ti:s.i,tgp:s.gp,tec:s.ec};
+}
+
+function renderMod4(){
+  if(!D)return;
+  var data=m4getData();if(!data)return;
+  renderMod4KPIs(data);
+  renderMod4Impact(data);
+  renderMod4Decomp(data);
+  renderMod4Detail(data);
+}
+
+function renderMod4KPIs(data){
+  var ecPct=data.ti?(data.tec/data.ti)*100:0;
+  // Biggest exposure
+  var maxCur="",maxPct=0;
+  for(var cur in data.byCur){var pct=data.tv?(data.byCur[cur].val/data.tv)*100:0;if(pct>maxPct){maxPct=pct;maxCur=cur}}
+  // Best/worst currency by EC
+  var bestCur="",bestEC=-Infinity,worstCur="",worstEC=Infinity;
+  for(var cur2 in data.byCur){if(cur2==="EUR")continue;var ec2=data.byCur[cur2].ec;if(ec2>bestEC){bestEC=ec2;bestCur=cur2}if(ec2<worstEC){worstEC=ec2;worstCur=cur2}}
+  // FX rates display (from fetchQuotes if available)
+  var fxInfo="";
+  if(typeof fxRatesGlobal!=="undefined"&&fxRatesGlobal){
+    var fxParts=[];
+    for(var fc in fxRatesGlobal){if(fc!=="EUR"&&fxRatesGlobal[fc]>0)fxParts.push("1€ = "+fmt(fxRatesGlobal[fc],4)+" "+fc)}
+    if(fxParts.length>0)fxInfo=fxParts.join(" · ");
+  }
+  var el=document.getElementById("mod4-kpis");
+  el.innerHTML='<div class="mod4-kpi"><div class="mod4-kpi-header"><div class="kpi-icon">💱</div><div class="kpi-label">Efeito Cambial Total</div></div><div class="mod4-kpi-value" style="color:'+(data.tec>=0?"#34d399":"#f87171")+'">'+(data.tec>=0?"+":"")+fE(data.tec)+'</div><div class="mod4-kpi-sub">'+fP(ecPct)+' do investimento</div></div>'+
+    '<div class="mod4-kpi"><div class="mod4-kpi-header"><div class="kpi-icon">🎯</div><div class="kpi-label">Maior Exposição</div></div><div class="mod4-kpi-value" style="color:'+(CC[maxCur]||"#8b8fa3")+'">'+maxCur+'</div><div class="mod4-kpi-sub">'+fmt(maxPct,1)+'% do portfolio · '+fE(data.byCur[maxCur]?data.byCur[maxCur].val:0)+'</div></div>'+
+    (bestCur?'<div class="mod4-kpi"><div class="mod4-kpi-header"><div class="kpi-icon">📈</div><div class="kpi-label">Melhor Moeda</div></div><div class="mod4-kpi-value" style="color:#34d399">'+bestCur+'</div><div class="mod4-kpi-sub">'+(bestEC>=0?"+":"")+fE(bestEC)+'</div></div>':'')+
+    (worstCur?'<div class="mod4-kpi"><div class="mod4-kpi-header"><div class="kpi-icon">📉</div><div class="kpi-label">Pior Moeda</div></div><div class="mod4-kpi-value" style="color:#f87171">'+worstCur+'</div><div class="mod4-kpi-sub">'+(worstEC>=0?"+":"")+fE(worstEC)+'</div></div>':'')+
+    (fxInfo?'<div class="mod4-kpi" style="grid-column:1/-1"><div class="mod4-kpi-header"><div class="kpi-icon">⊕</div><div class="kpi-label">Câmbios Actuais</div></div><div style="font-size:13px;color:#e8e9ed;font-weight:500">'+fxInfo+'</div><div class="mod4-kpi-sub">Fonte: Yahoo Finance (última actualização)</div></div>':'');
+}
+
+function renderMod4Impact(data){
+  document.getElementById("mod4-impact-title").textContent="Impacto Cambial por Moeda"+(currentFilter!=="Todas"?" — "+currentFilter:"");
+  var el=document.getElementById("mod4-impact-bars");el.innerHTML="";
+  var entries=Object.entries(data.byCur).filter(function(e){return e[0]!=="EUR"}).sort(function(a,b){return Math.abs(b[1].ec)-Math.abs(a[1].ec)});
+  if(entries.length===0){el.innerHTML='<div style="text-align:center;color:#8b8fa3;font-size:13px;padding:20px">Sem exposição cambial</div>';return}
+  var maxAbs=0;for(var i=0;i<entries.length;i++){var abs=Math.abs(entries[i][1].ec);if(abs>maxAbs)maxAbs=abs}
+  for(var j=0;j<entries.length;j++){
+    var cur=entries[j][0],d=entries[j][1];
+    var ecPct=d.inv?(d.ec/d.inv)*100:0;
+    var barW=maxAbs>0?Math.abs(d.ec)/maxAbs*100:0;
+    var isPos=d.ec>=0;
+    // Bidirectional: bar starts from center (50%)
+    var barStyle;
+    if(isPos){barStyle='left:50%;width:'+barW/2+'%'}
+    else{barStyle='right:50%;width:'+barW/2+'%'}
+    el.innerHTML+='<div class="mod4-bar"><div class="mod4-bar-cur" style="color:'+(CC[cur]||"#8b8fa3")+'">'+cur+'</div><div class="mod4-bar-track"><div class="'+(isPos?"mod4-bar-fill-pos":"mod4-bar-fill-neg")+'" style="'+barStyle+'"></div></div><div class="mod4-bar-val" style="color:'+(isPos?"#34d399":"#f87171")+'">'+(isPos?"+":"")+fE(d.ec)+'</div><div class="mod4-bar-pct" style="color:'+(isPos?"#34d399":"#f87171")+'">'+fP(ecPct)+'</div></div>';
+  }
+  // Add EUR line (always 0)
+  if(data.byCur["EUR"]){
+    el.innerHTML+='<div class="mod4-bar"><div class="mod4-bar-cur" style="color:'+(CC["EUR"]||"#8b8fa3")+'">EUR</div><div class="mod4-bar-track"><div style="position:absolute;left:50%;top:0;width:1px;height:100%;background:#8b8fa3"></div></div><div class="mod4-bar-val" style="color:#8b8fa3">0€</div><div class="mod4-bar-pct" style="color:#8b8fa3">0,00%</div></div>';
+  }
+}
+
+function renderMod4Decomp(data){
+  document.getElementById("mod4-decomp-title").textContent="Decomposição do G/P"+(currentFilter!=="Todas"?" — "+currentFilter:"");
+  var el=document.getElementById("mod4-decomp-bars");el.innerHTML="";
+  var entries=Object.entries(data.byCur).sort(function(a,b){return Math.abs(b[1].gp)-Math.abs(a[1].gp)});
+  for(var i=0;i<entries.length;i++){
+    var cur=entries[i][0],d=entries[i][1];
+    var gpActivo=d.gp-d.ec;
+    var totalAbs=Math.abs(gpActivo)+Math.abs(d.ec);
+    if(totalAbs<1)continue;
+    // Stacked bar showing proportion
+    var wActivo=totalAbs>0?Math.abs(gpActivo)/totalAbs*100:0;
+    var wCambio=totalAbs>0?Math.abs(d.ec)/totalAbs*100:0;
+    var colActivo=gpActivo>=0?"#818cf8":"#6366f180";
+    var colCambio=d.ec>=0?"#f59e0b":"#f59e0b80";
+    el.innerHTML+='<div class="mod4-decomp-row"><div class="mod4-decomp-cur" style="color:'+(CC[cur]||"#8b8fa3")+'">'+cur+'</div><div class="mod4-decomp-track"><div class="mod4-decomp-seg" style="width:'+wActivo+'%;background:'+colActivo+'"></div><div class="mod4-decomp-seg" style="width:'+wCambio+'%;background:'+colCambio+'"></div></div><div class="mod4-decomp-labels"><span style="color:#818cf8">'+(gpActivo>=0?"+":"")+fE(gpActivo)+'</span><span style="color:#f59e0b">'+(d.ec>=0?"+":"")+fE(d.ec)+'</span></div></div>';
+  }
+}
+
+function renderMod4Detail(data){
+  document.getElementById("mod4-table-title").textContent="Detalhe por Moeda"+(currentFilter!=="Todas"?" — "+currentFilter:"");
+  var el=document.getElementById("mod4-detail-list");el.innerHTML="";
+  var entries=Object.entries(data.byCur).sort(function(a,b){return b[1].val-a[1].val});
+  for(var i=0;i<entries.length;i++){
+    var cur=entries[i][0],d=entries[i][1];
+    var gpActivo=d.gp-d.ec;
+    var peso=data.tv?(d.val/data.tv)*100:0;
+    var row=document.createElement("div");row.className="mod4-detail-row";
+    row.innerHTML='<div class="mod4-detail-main"><div style="display:flex;align-items:center;gap:8px;flex:1"><div class="legend-dot" style="background:'+(CC[cur]||"#6b7280")+'"></div><span style="font-size:14px;font-weight:600">'+cur+'</span><span style="font-size:12px;color:#8b8fa3">'+d.n+' posições</span></div><div style="text-align:right"><div style="font-size:14px;font-weight:500">'+fE(d.val)+'</div><div style="font-size:12px;color:#8b8fa3">'+fmt(peso,1)+'%</div></div><div style="text-align:right;width:90px"><div style="font-size:12px;font-weight:500;color:'+(d.gp>=0?"#34d399":"#f87171")+'">'+(d.gp>=0?"+":"")+fE(d.gp)+'</div><div style="font-size:10px;color:#8b8fa3">G/P total</div></div><div style="text-align:right;width:80px"><div style="font-size:12px;font-weight:500;color:'+(d.ec>=0?"#34d399":"#f87171")+'">'+(d.ec>=0?"+":"")+fE(d.ec)+'</div><div style="font-size:10px;color:#8b8fa3">câmbio</div></div><div class="pos-arrow" style="width:16px;color:#8b8fa3;font-size:12px;text-align:center">▾</div></div>';
+    var sub=document.createElement("div");sub.className="mod4-detail-sub hidden";
+    var thtml='<table><thead><tr><th style="text-align:left">Título</th><th>Investimento</th><th>Valor</th><th>G/P Activo</th><th>Ef. Cambial</th><th>G/P Total</th></tr></thead><tbody>';
+    for(var j=0;j<d.positions.length;j++){
+      var p=d.positions[j];
+      thtml+='<tr><td style="text-align:left;font-weight:500">'+p.t.split(" / ")[0]+'</td><td>'+fE(p.inv)+'</td><td>'+fE(p.val)+'</td><td style="color:'+(p.gpa>=0?"#34d399":"#f87171")+'">'+(p.gpa>=0?"+":"")+fE(p.gpa)+'</td><td style="color:'+(p.ec>=0?"#34d399":"#f87171")+'">'+(p.ec>=0?"+":"")+fE(p.ec)+'</td><td style="color:'+(p.gp>=0?"#34d399":"#f87171")+';font-weight:500">'+(p.gp>=0?"+":"")+fE(p.gp)+'</td></tr>';
+    }
+    thtml+='</tbody></table>';
+    sub.innerHTML=thtml;
+    row.appendChild(sub);
+    row.querySelector(".mod4-detail-main").onclick=(function(s){return function(){s.classList.toggle("hidden")}})(sub);
+    el.appendChild(row);
+  }
 }
 
 // Event listeners
