@@ -458,11 +458,12 @@ function parseExcel(data){
   for(var i=0;i<Math.min(rows.length,5);i++){if(rows[i]&&rows[i][0]==="ISIN"){headerRow=i;break}}
   if(headerRow<0)return null;
   // Parse Cotações Benchmark sheet
-  var benchLookup={},spyHoje=null,eurUsdHoje=null;
+  var benchLookup={},spyHoje=null,eurUsdHoje=null,iwdaHoje=null;
   var wsBench=wb.Sheets["Cotações Benchmark"];
   if(wsBench){
     var bRows=XLSX.utils.sheet_to_json(wsBench,{header:1,defval:null,rawNumbers:true});
     // Current values from col G (idx 6): row1=IWDA, row2=SPY, row3=EUR/USD
+    if(bRows[1]&&typeof bRows[1][6]==="number")iwdaHoje=bRows[1][6];
     if(bRows[2]&&typeof bRows[2][6]==="number")spyHoje=bRows[2][6];
     if(bRows[3]&&typeof bRows[3][6]==="number")eurUsdHoje=bRows[3][6];
     for(var bi=1;bi<bRows.length;bi++){
@@ -545,7 +546,8 @@ function parseExcel(data){
       }
     }
   }
-  if(m2txns.length>0&&m2txns[0].iwA>0){var now2=new Date();m2iwdaPrices[now2.getFullYear()+"-"+String(now2.getMonth()+1).padStart(2,"0")]=m2txns[0].iwA}
+  var iwdaNowVal=iwdaHoje||(m2txns.length>0?m2txns[0].iwA:0);
+  if(iwdaNowVal>0){var now2=new Date();m2iwdaPrices[now2.getFullYear()+"-"+String(now2.getMonth()+1).padStart(2,"0")]=iwdaNowVal}
   // Build monthly chart from IWDA prices + SP500 EUR monthly curve from benchmark data
   var m2months=Object.keys(m2iwdaPrices).sort();
   // Build SP500 EUR monthly lookup: {month -> sp500EurIndex}
@@ -573,7 +575,7 @@ function parseExcel(data){
   var m2sp500sum=hasBench?{inv:m2tInv,val:m2tSP500,ret:m2tInv?((m2tSP500/m2tInv)-1)*100:0}:null;
   return{dt:new Date().toISOString().split("T")[0],ti:Math.round(totalI*100)/100,tv:Math.round(totalV*100)/100,tgp:Math.round(totalGP*100)/100,tgpp:totalI?Math.round((totalV/totalI-1)*10000)/100:0,tec:Math.round(totalEC*100)/100,pos:posArr,sp:splits,es:es,cx:cxAll,cxe:cxEnt,
     m2:{txns:m2txns,ents:m2ents,chart:m2chart,iwdaPrices:m2iwdaPrices,months:m2months,sp5Monthly:sp5Monthly,
-      iwdaNow:m2txns.length>0?m2txns[0].iwA:0,
+      iwdaNow:iwdaNowVal,
       sp500:m2sp500sum,
       summary:{inv:m2tInv,val:m2tVal,gp:m2tVal-m2tInv,gpp:m2tInv?((m2tVal/m2tInv)-1)*100:0,iwdaVal:m2tIWDA,iwdaRet:m2tInv?((m2tIWDA/m2tInv)-1)*100:0,
         sp500Val:m2tSP500,sp500Ret:m2tInv?((m2tSP500/m2tInv)-1)*100:0}}};
