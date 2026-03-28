@@ -456,6 +456,24 @@ function fE(v){return fmt(v)+"€"}
 function fP(v,d){if(d===undefined)d=2;return(v>=0?"+":"")+fmt(v,d)+"%"}
 function m2dk(d){if(!d)return"";if(typeof d==="number")d=new Date((d-25569)*86400000);if(d instanceof Date)return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0");return""}
 
+function calcXIRR(cashflows){
+  // cashflows: [{d:Date,a:amount},...] negative=outflow, positive=inflow
+  if(!cashflows||cashflows.length<2)return null;
+  var d0=cashflows[0].d;
+  var days=[];var amounts=[];
+  for(var i=0;i<cashflows.length;i++){days.push((cashflows[i].d-d0)/(365.25*86400000));amounts.push(cashflows[i].a)}
+  function npv(r){var s=0;for(var j=0;j<amounts.length;j++){s+=amounts[j]/Math.pow(1+r,days[j])}return s}
+  // Brent's method between -0.5 and 10
+  var lo=-0.5,hi=10,fa=npv(lo),fb=npv(hi);
+  if(fa*fb>0){lo=-0.9;hi=100;fa=npv(lo);fb=npv(hi);if(fa*fb>0)return null}
+  for(var it=0;it<200;it++){
+    var mid=(lo+hi)/2;var fm=npv(mid);
+    if(Math.abs(fm)<0.001||Math.abs(hi-lo)<1e-8)return mid;
+    if(fa*fm<0){hi=mid;fb=fm}else{lo=mid;fa=fm}
+  }
+  return(lo+hi)/2;
+}
+
 function parseExcel(data){
   var wb=XLSX.read(data,{type:"array",cellFormula:false,cellNF:false,cellStyles:false});
   var ws=wb.Sheets["INVESTIMENTOS"];if(!ws)return null;
@@ -597,7 +615,70 @@ function parseExcel(data){
       }
     }
   }
+  // === M1 Extra KPIs: TIR (XIRR), M/V Realizada, Alpha IWDA Total (O+C) ===
+  var today1=new Date();
+  var m1xCFs={Todas:[]};var m1rGP={Todas:{inv:0,val:0}};var m1alpha={Todas:{inv:0,rVal:0,iwVal:0}};
+  for(var r3=headerRow+1;r3<rows.length;r3++){
+    var rw3=rows[r3];if(!rw3)continue;
+    var oc3=rw3[colIdx["Open/Close"]];if(oc3!=="O"&&oc3!=="C")continue;
+    var inv3=Number(rw3[colIdx["Total Investimento €"]])||0;
+    var ent4=rw3[colIdx["Entidade Investidora"]]||"";
+    var dc3=rw3[colIdx["Data Compra"]];
+    if(!inv3||!dc3)continue;
+    var dateBuy3=typeof dc3==="number"?new Date((dc3-25569)*86400000):(dc3 instanceof Date?dc3:null);
+    if(!dateBuy3)continue;
+    // Init entity accumulators
+    if(!m1xCFs[ent4])m1xCFs[ent4]=[];
+    if(!m1rGP[ent4])m1rGP[ent4]={inv:0,val:0};
+    if(!m1alpha[ent4])m1alpha[ent4]={inv:0,rVal:0,iwVal:0};
+    // XIRR cashflows: outflow at buy
+    m1xCFs.Todas.push({d:dateBuy3,a:-Math.abs(inv3)});
+    m1xCFs[ent4].push({d:dateBuy3,a:-Math.abs(inv3)});
+    if(oc3==="C"){
+      // Closed lot
+      var valSell3=Number(rw3[colIdx["Valor Venda €"]])||0;
+      var dv3=rw3[colIdx["Data Venda"]];
+      var dateSell3=typeof dv3==="number"?new Date((dv3-25569)*86400000):(dv3 instanceof Date?dv3:null);
+      if(dateSell3){m1xCFs.Todas.push({d:dateSell3,a:Math.abs(valSell3)});m1xCFs[ent4].push({d:dateSell3,a:Math.abs(valSell3)})}
+      // Realized G/P
+      m1rGP.Todas.inv+=inv3;m1rGP.Todas.val+=valSell3;
+      m1rGP[ent4].inv+=inv3;m1rGP[ent4].val+=valSell3;
+      // Alpha Total: closed lots
+      var iwC3=Number(rw3[colIdx["Cotação Compra Indice"]])||0;
+      var iwV3b=rw3[colIdx["Cotação Venda Indice"]];iwV3b=iwV3b?Number(iwV3b):0;
+      if(iwC3>0){
+        m1alpha.Todas.inv+=inv3;m1alpha.Todas.rVal+=valSell3;
+        m1alpha[ent4].inv+=inv3;m1alpha[ent4].rVal+=valSell3;
+        m1alpha.Todas.iwVal+=inv3*(iwV3b>0?iwV3b/iwC3:iwdaNowVal/iwC3);
+        m1alpha[ent4].iwVal+=inv3*(iwV3b>0?iwV3b/iwC3:iwdaNowVal/iwC3);
+      }
+    }else{
+      // Open lot: inflow today at current value
+      var val3=Number(rw3[colIdx["Valor Actual €"]])||0;
+      m1xCFs.Todas.push({d:today1,a:Math.abs(val3)});
+      m1xCFs[ent4].push({d:today1,a:Math.abs(val3)});
+      // Alpha Total: open lots
+      var iwC3b=Number(rw3[colIdx["Cotação Compra Indice"]])||0;
+      if(iwC3b>0){
+        m1alpha.Todas.inv+=inv3;m1alpha.Todas.rVal+=val3;
+        m1alpha[ent4].inv+=inv3;m1alpha[ent4].rVal+=val3;
+        m1alpha.Todas.iwVal+=inv3*(iwdaNowVal/iwC3b);
+        m1alpha[ent4].iwVal+=inv3*(iwdaNowVal/iwC3b);
+      }
+    }
+  }
+  // Calculate XIRR per entity
+  var m1xirr={};
+  for(var xk in m1xCFs){var xcfs=m1xCFs[xk];xcfs.sort(function(a,b){return a.d-b.d});m1xirr[xk]={rate:calcXIRR(xcfs),years:xcfs.length>1?(today1-xcfs[0].d)/(365.25*86400000):0}}
+  // Calculate realized G/P per entity
+  var m1real={};
+  for(var rk in m1rGP){var rg=m1rGP[rk];m1real[rk]={inv:rg.inv,val:rg.val,gp:rg.val-rg.inv,pct:rg.inv?(rg.val/rg.inv-1)*100:0}}
+  // Calculate alpha total per entity
+  var m1alph={};
+  for(var ak in m1alpha){var al=m1alpha[ak];var arR=al.inv?(al.rVal/al.inv-1)*100:0;var arI=al.inv?(al.iwVal/al.inv-1)*100:0;m1alph[ak]={pct:arR-arI,eur:al.rVal-al.iwVal}}
+
   return{dt:new Date().toISOString().split("T")[0],ti:Math.round(totalI*100)/100,tv:Math.round(totalV*100)/100,tgp:Math.round(totalGP*100)/100,tgpp:totalI?Math.round((totalV/totalI-1)*10000)/100:0,tec:Math.round(totalEC*100)/100,pos:posArr,sp:splits,es:es,cx:cxAll,cxe:cxEnt,betas:betaMap,
+    m1x:{xirr:m1xirr,real:m1real,alpha:m1alph},
     m2:{txns:m2txns,ents:m2ents,chart:m2chart,iwdaPrices:m2iwdaPrices,months:m2months,sp5Monthly:sp5Monthly,
       iwdaNow:iwdaNowVal,
       sp500:m2sp500sum,
@@ -662,13 +743,30 @@ function renderKPIs(){
   var s=getSummary();var pos=getPositions();
   // Variação Hoje: weighted % and € from vh (live or file)
   var vh=calcVarHoje(pos,s.v);
+  // M1 extra KPIs per entity
+  var ek=currentFilter==="Todas"?"Todas":currentFilter;
+  var xirr=D.m1x&&D.m1x.xirr&&D.m1x.xirr[ek]?D.m1x.xirr[ek]:null;
+  var real=D.m1x&&D.m1x.real&&D.m1x.real[ek]?D.m1x.real[ek]:null;
+  var alpha=D.m1x&&D.m1x.alpha&&D.m1x.alpha[ek]?D.m1x.alpha[ek]:null;
+  // TIR card
+  var tirVal="—",tirSub="",tirTrend=0;
+  if(xirr&&xirr.rate!=null){tirVal=fP(xirr.rate*100);tirTrend=xirr.rate;tirSub=fmt(xirr.years,1)+" anos"}
+  // Realized G/P card
+  var realVal="—",realSub="",realTrend=0;
+  if(real){realVal=(real.gp>=0?"+":"")+fE(real.gp);realTrend=real.gp;realSub=fP(real.pct)}
+  // Alpha Total card
+  var alpVal="—",alpSub="",alpTrend=0;
+  if(alpha){alpVal=fP(alpha.pct);alpTrend=alpha.pct;alpSub=(alpha.eur>=0?"+":"")+fE(alpha.eur)}
   var el=document.getElementById("kpis");
   el.innerHTML=[
     kpiHTML("$","Valor Actual",fE(s.v),fP(s.gpp)+" desde início",s.gpp),
     kpiHTML("⊞","Investimento",fE(s.i),pos.length+" posições",0),
     kpiHTML(s.gp>=0?"↗":"↘","Mais/Menos Valia",(s.gp>=0?"+":"")+fE(s.gp),fP(s.gpp),s.gp),
     kpiHTML("⊕","Efeito Cambial",fE(s.ec),s.i?fP((s.ec/s.i)*100):"",s.ec),
-    kpiHTML(vh.eur>=0?"↗":"↘","Variação Hoje",(vh.eur>=0?"+":"")+fE(vh.eur),fP(vh.pct)+" ponderada",vh.eur)
+    kpiHTML(vh.eur>=0?"↗":"↘","Variação Hoje",(vh.eur>=0?"+":"")+fE(vh.eur),fP(vh.pct)+" ponderada",vh.eur),
+    kpiHTML("⌛","TIR (XIRR)",tirVal,tirSub,tirTrend),
+    kpiHTML(realTrend>=0?"↗":"↘","M/V Realizada",realVal,realSub,realTrend),
+    kpiHTML("🌍","Alpha IWDA Total",alpVal,alpSub,alpTrend)
   ].join("");
 }
 
@@ -807,7 +905,7 @@ function fetchQuotes(){
         var nEs={},nCxe={};for(var e2 in D.es){var eI=0,eV=0,eEC=0,eTT=0;nCxe[e2]={};for(var i3 in nSp){if(nSp[i3][e2]){var s=nSp[i3][e2];eI+=s[1];eV+=s[2];eEC+=s[4];eTT++;var pm2="USD";for(var px=0;px<newPos.length;px++){if(newPos[px].isin===i3){pm2=newPos[px].me;break}}nCxe[e2][pm2]=(nCxe[e2][pm2]||0)+s[2]}}nEs[e2]={tt:eTT,i:Math.round(eI*100)/100,v:Math.round(eV*100)/100,gp:Math.round((eV-eI)*100)/100,gpp:eI?Math.round((eV/eI-1)*10000)/100:0,ec:Math.round(eEC*100)/100}}
         var nCx={};for(var px2=0;px2<newPos.length;px2++){var pm=newPos[px2].me;var pxv=newPos[px2].v;if(!isNaN(pxv))nCx[pm]=(nCx[pm]||0)+pxv}
         var nTV=0,nTGP=0,nTEC=0;for(var te in nEs){nTV+=nEs[te].v;nTGP+=nEs[te].gp;nTEC+=nEs[te].ec}
-        D={dt:new Date().toISOString().split("T")[0],ti:D.ti,tv:Math.round(nTV*100)/100,tgp:Math.round(nTGP*100)/100,tgpp:D.ti?Math.round((nTV/D.ti-1)*10000)/100:0,tec:Math.round(nTEC*100)/100,pos:newPos,sp:nSp,es:nEs,cx:nCx,cxe:nCxe,betas:D.betas,m2:D.m2};
+        D={dt:new Date().toISOString().split("T")[0],ti:D.ti,tv:Math.round(nTV*100)/100,tgp:Math.round(nTGP*100)/100,tgpp:D.ti?Math.round((nTV/D.ti-1)*10000)/100:0,tec:Math.round(nTEC*100)/100,pos:newPos,sp:nSp,es:nEs,cx:nCx,cxe:nCxe,betas:D.betas,m1x:D.m1x,m2:D.m2};
         renderDashboard();prog.classList.add("hidden");btn.classList.remove("active");
         showMsg("ok","Cotações actualizadas: "+Object.keys(prices).length+" títulos, "+Object.keys(fxRates).length+" câmbios");
         return;
