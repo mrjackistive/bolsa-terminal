@@ -414,12 +414,12 @@ function fetchQuotes(){
     function processBatch(bi){
       if(bi>=batches.length){
         var newPos=D.pos.map(function(p){var np={};for(var k in p)np[k]=p[k];var yt=tickerMap[p.isin];if(prices[yt]){var pr=prices[yt];var po=pr.price;var pc=pr.currency;if(po!=null&&!isNaN(po)){if(pc==="GBp"){po=po/100;pc="GBP"}var ce;if(pc==="EUR"){ce=po}else{var fx=fxRates[pc]||fxRates[np.me];if(fx&&!isNaN(fx)){ce=po/fx}else{ce=np.ca}}if(ce!=null&&!isNaN(ce)){np.ca=Math.round(ce*10000)/10000;np.v=np.q*ce;np.gp=np.v-np.i;np.gpp=np.i?Math.round((np.v/np.i-1)*10000)/100:0}}np.vh=pr.cp!=null?Math.round(pr.cp*100)/100:np.vh}return np});
-        var nTV=0,nTGP=0;for(var j=0;j<newPos.length;j++){var pv=newPos[j].v,pg=newPos[j].gp;if(!isNaN(pv))nTV+=pv;if(!isNaN(pg))nTGP+=pg}
         newPos.sort(function(a,b){return b.v-a.v});
         var nSp={};for(var isin2 in D.sp){nSp[isin2]={};var pfi=null;for(var pp=0;pp<newPos.length;pp++){if(newPos[pp].isin===isin2){pfi=newPos[pp];break}}for(var ent in D.sp[isin2]){var os=D.sp[isin2][ent];var nv=pfi&&pfi.ca?os[0]*pfi.ca:os[2];nSp[isin2][ent]=[os[0],os[1],nv,nv-os[1],os[4]]}}
         var nEs={},nCxe={};for(var e2 in D.es){var eI=0,eV=0,eEC=0,eTT=0;nCxe[e2]={};for(var i3 in nSp){if(nSp[i3][e2]){var s=nSp[i3][e2];eI+=s[1];eV+=s[2];eEC+=s[4];eTT++;var pm2="USD";for(var px=0;px<newPos.length;px++){if(newPos[px].isin===i3){pm2=newPos[px].me;break}}nCxe[e2][pm2]=(nCxe[e2][pm2]||0)+s[2]}}nEs[e2]={tt:eTT,i:Math.round(eI*100)/100,v:Math.round(eV*100)/100,gp:Math.round((eV-eI)*100)/100,gpp:eI?Math.round((eV/eI-1)*10000)/100:0,ec:Math.round(eEC*100)/100}}
-        var nCx={};for(var px2=0;px2<newPos.length;px2++){var pm=newPos[px2].me;nCx[pm]=(nCx[pm]||0)+newPos[px2].v}
-        D={dt:new Date().toISOString().split("T")[0],ti:D.ti,tv:Math.round(nTV*100)/100,tgp:Math.round(nTGP*100)/100,tgpp:D.ti?Math.round((nTV/D.ti-1)*10000)/100:0,tec:D.tec,pos:newPos,sp:nSp,es:nEs,cx:nCx,cxe:nCxe};
+        var nCx={};for(var px2=0;px2<newPos.length;px2++){var pm=newPos[px2].me;var pxv=newPos[px2].v;if(!isNaN(pxv))nCx[pm]=(nCx[pm]||0)+pxv}
+        var nTV=0,nTGP=0,nTEC=0;for(var te in nEs){nTV+=nEs[te].v;nTGP+=nEs[te].gp;nTEC+=nEs[te].ec}
+        D={dt:new Date().toISOString().split("T")[0],ti:D.ti,tv:Math.round(nTV*100)/100,tgp:Math.round(nTGP*100)/100,tgpp:D.ti?Math.round((nTV/D.ti-1)*10000)/100:0,tec:Math.round(nTEC*100)/100,pos:newPos,sp:nSp,es:nEs,cx:nCx,cxe:nCxe};
         renderDashboard();prog.classList.add("hidden");btn.classList.remove("active");
         showMsg("ok","Cotações actualizadas: "+Object.keys(prices).length+" títulos, "+Object.keys(fxRates).length+" câmbios");
         return;
