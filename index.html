@@ -243,7 +243,7 @@ html,body{background:#000!important;color:#e8e9ed;font-family:'DM Sans','Segoe U
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:8px">
         <div style="font-size:16px;font-weight:700;display:flex;align-items:center;gap:8px"><span style="color:#8b8fa3">📈</span> Performance vs Benchmark</div>
         <div style="display:flex;gap:8px;align-items:center">
-          <button class="mod2-load-btn" id="btn-load-bench" onclick="loadBenchmarks()">Carregar Benchmarks</button>
+          <button class="mod2-load-btn" id="btn-load-bench" onclick="loadBenchmarks()">Carregar Curva Portfolio</button>
           <span class="progress-text hidden" id="bench-progress"></span>
         </div>
       </div>
@@ -271,13 +271,13 @@ html,body{background:#000!important;color:#e8e9ed;font-family:'DM Sans','Segoe U
         </button>
         <div class="mod2-meth-content hidden">
           <p style="margin-bottom:8px"><strong style="color:#e8e9ed">KPIs:</strong> O Retorno Portfolio é a mais/menos valia real. Os Alphas mostram a diferença entre o teu retorno e o que terias obtido investindo cada € no benchmark na mesma data — em percentagem e em euros.</p>
-          <p style="margin-bottom:8px"><strong style="color:#e8e9ed">Gráfico:</strong> Mostra a evolução do valor real da carteira vs benchmarks. As cotações históricas são obtidas via Yahoo Finance ao clicar "Carregar Benchmarks".</p>
-          <p style="margin-bottom:8px"><strong style="color:#e8e9ed">Tabela (Money-weighted):</strong> Para cada lote, calcula quanto valeria hoje se investido no benchmark na mesma data. Dados IWDA do próprio Excel.</p>
-          <p><strong style="color:#e8e9ed">S&P 500 em EUR:</strong> Índice S&P 500 convertido para EUR pelo câmbio do dia — reflecte o retorno real de um investidor europeu sem cobertura cambial.</p>
+          <p style="margin-bottom:8px"><strong style="color:#e8e9ed">Gráfico:</strong> As curvas IWDA e S&P 500 EUR usam dados do próprio Excel. A curva Portfolio é uma proxy baseada na curva IWDA escalada pelo alpha real — clica "Carregar Curva Portfolio" para a activar.</p>
+          <p style="margin-bottom:8px"><strong style="color:#e8e9ed">Tabela (Money-weighted):</strong> Para cada lote, calcula quanto valeria hoje se investido no benchmark na mesma data. Dados IWDA e S&P 500 do próprio Excel (folha "Cotações Benchmark").</p>
+          <p><strong style="color:#e8e9ed">S&P 500 em EUR:</strong> Para cada lote: Inv × (SPY_hoje / SPY_compra) × (EUR/USD_compra / EUR/USD_hoje). Captura tanto o retorno do índice como o efeito cambial EUR/USD, usando cotações exactas das datas de compra.</p>
         </div>
       </div>
     </div>
-    <div class="footer">Bolsa Terminal v2.1 — <span id="footer-date"></span></div>
+    <div class="footer">Bolsa Terminal v2.2 — <span id="footer-date"></span></div>
   </main>
 </div>
 
@@ -307,6 +307,26 @@ function parseExcel(data){
   var headerRow=-1;
   for(var i=0;i<Math.min(rows.length,5);i++){if(rows[i]&&rows[i][0]==="ISIN"){headerRow=i;break}}
   if(headerRow<0)return null;
+  // Parse Cotações Benchmark sheet
+  var benchLookup={},spyHoje=null,eurUsdHoje=null;
+  var wsBench=wb.Sheets["Cotações Benchmark"];
+  if(wsBench){
+    var bRows=XLSX.utils.sheet_to_json(wsBench,{header:1,defval:null,rawNumbers:true});
+    // Current values from col G (idx 6): row1=IWDA, row2=SPY, row3=EUR/USD
+    if(bRows[2]&&typeof bRows[2][6]==="number")spyHoje=bRows[2][6];
+    if(bRows[3]&&typeof bRows[3][6]==="number")eurUsdHoje=bRows[3][6];
+    for(var bi=1;bi<bRows.length;bi++){
+      var br=bRows[bi];
+      // SPY: col J(9)=Data Compra, col K(10)=Cotação
+      if(typeof br[9]==="number"&&br[9]>10000&&typeof br[10]==="number"){
+        if(!benchLookup[br[9]])benchLookup[br[9]]={};benchLookup[br[9]].spy=br[10];
+      }
+      // EUR/USD: col O(14)=Data Compra, col P(15)=Cotação
+      if(typeof br[14]==="number"&&br[14]>10000&&typeof br[15]==="number"){
+        if(!benchLookup[br[14]])benchLookup[br[14]]={};benchLookup[br[14]].eurusd=br[15];
+      }
+    }
+  }
   var headers=rows[headerRow];var colIdx={};
   var needed=["ISIN","Ticker","Titulo","Moeda","Qtd. Compra","Total Investimento €","Valor Actual €","G/P €","Efeito Cambial €","Open/Close","Cotação Actual Euro","Variação Hoje %","Plataforma","Entidade Investidora","Data Compra","Data Venda","Valor Venda €","Cotação Compra Indice","IWDA","Valor Actual Indice","Cotação Venda Indice"];
   for(var c=0;c<headers.length;c++){if(headers[c]&&needed.indexOf(headers[c])>=0)colIdx[headers[c]]=c}
@@ -343,7 +363,9 @@ function parseExcel(data){
   for(var ent2 in entSummary){var s2=entSummary[ent2];es[ent2]={tt:Object.keys(s2.tt).length,i:Math.round(s2.i*100)/100,v:Math.round(s2.v*100)/100,gp:Math.round(s2.gp*100)/100,gpp:s2.i?Math.round((s2.v/s2.i-1)*10000)/100:0,ec:Math.round(s2.ec*100)/100}}
   // M2: collect benchmark data
   var m2txns=[],m2iwdaPrices={},m2ents={};
-  var m2tInv=0,m2tVal=0,m2tIWDA=0;
+  var m2tInv=0,m2tVal=0,m2tIWDA=0,m2tSP500=0;
+  var m2sp500Ents={};
+  var hasBench=spyHoje&&eurUsdHoje&&Object.keys(benchLookup).length>0;
   for(var r2=headerRow+1;r2<rows.length;r2++){
     var rw=rows[r2];if(!rw||!rw[colIdx["ISIN"]])continue;
     var oc2=rw[colIdx["Open/Close"]];if(oc2!=="O"&&oc2!=="C")continue;
@@ -359,22 +381,51 @@ function parseExcel(data){
     if(bm2&&iwC2>0)m2iwdaPrices[bm2]=iwC2;
     if(oc2==="C"&&dv2&&iwV2){var sm3=m2dk(dv2);if(sm3)m2iwdaPrices[sm3]=iwV2}
     var qtd2=Number(rw[colIdx["Qtd. Compra"]])||0;
-    m2txns.push({oc:oc2,inv:inv2,val:val2,bm:bm2,sm:oc2==="C"?m2dk(dv2):null,iwC:iwC2,iwA:iwA2,viIdx:viIdx2,ent:ent3,isin:rw[colIdx["ISIN"]],ticker:rw[colIdx["Ticker"]]||"",q:qtd2});
-    if(oc2==="O"){m2tInv+=inv2;m2tVal+=val2;m2tIWDA+=viIdx2;
-      if(ent3){if(!m2ents[ent3])m2ents[ent3]={inv:0,val:0,iwda:0};m2ents[ent3].inv+=inv2;m2ents[ent3].val+=val2;m2ents[ent3].iwda+=viIdx2}}
+    // SP500 EUR per lot from benchmark sheet
+    var sp5Val=0;
+    if(hasBench&&oc2==="O"&&typeof dc2==="number"&&dc2>10000){
+      var bl=benchLookup[dc2];
+      if(bl&&bl.spy&&bl.eurusd){sp5Val=inv2*(spyHoje/bl.spy)*(bl.eurusd/eurUsdHoje)}
+    }
+    m2txns.push({oc:oc2,inv:inv2,val:val2,bm:bm2,sm:oc2==="C"?m2dk(dv2):null,iwC:iwC2,iwA:iwA2,viIdx:viIdx2,ent:ent3,isin:rw[colIdx["ISIN"]],ticker:rw[colIdx["Ticker"]]||"",q:qtd2,dc:dc2,sp5:sp5Val});
+    if(oc2==="O"){m2tInv+=inv2;m2tVal+=val2;m2tIWDA+=viIdx2;m2tSP500+=sp5Val;
+      if(ent3){
+        if(!m2ents[ent3])m2ents[ent3]={inv:0,val:0,iwda:0,sp500:0};
+        m2ents[ent3].inv+=inv2;m2ents[ent3].val+=val2;m2ents[ent3].iwda+=viIdx2;m2ents[ent3].sp500+=sp5Val;
+      }
+    }
   }
   if(m2txns.length>0&&m2txns[0].iwA>0){var now2=new Date();m2iwdaPrices[now2.getFullYear()+"-"+String(now2.getMonth()+1).padStart(2,"0")]=m2txns[0].iwA}
-  // Build monthly chart from IWDA prices
+  // Build monthly chart from IWDA prices + SP500 EUR monthly curve from benchmark data
   var m2months=Object.keys(m2iwdaPrices).sort();
+  // Build SP500 EUR monthly lookup: {month -> sp500EurIndex}
+  // For the monthly curve, we need SP500/EURUSD at each month. Use benchLookup keyed by date serial.
+  // Group benchmark data by month to find the latest value per month
+  var sp5Monthly={};
+  if(hasBench){
+    var bkKeys=Object.keys(benchLookup).map(Number).sort(function(a,b){return a-b});
+    for(var bki=0;bki<bkKeys.length;bki++){
+      var bkd=bkKeys[bki];var bl2=benchLookup[bkd];
+      if(bl2.spy&&bl2.eurusd){
+        var bkDate=new Date((bkd-25569)*86400000);
+        var mk=bkDate.getFullYear()+"-"+String(bkDate.getMonth()+1).padStart(2,"0");
+        sp5Monthly[mk]=bl2.spy/bl2.eurusd; // SP500 in EUR
+      }
+    }
+  }
   var m2chart=[];
   for(var mi2=0;mi2<m2months.length;mi2++){
     var mon=m2months[mi2];var iwP2=m2iwdaPrices[mon];var cumI2=0,iwV3=0;
     for(var ti2=0;ti2<m2txns.length;ti2++){var tx2=m2txns[ti2];if(!tx2.bm||tx2.bm>mon)continue;if(tx2.oc==="C"&&tx2.sm&&tx2.sm<=mon)continue;cumI2+=tx2.inv;if(tx2.iwC>0)iwV3+=tx2.inv*(iwP2/tx2.iwC)}
     if(cumI2>0)m2chart.push({m:mon,inv:Math.round(cumI2),iwda:Math.round(iwV3)})
   }
+  // SP500 summary
+  var m2sp500sum=hasBench?{inv:m2tInv,val:m2tSP500,ret:m2tInv?((m2tSP500/m2tInv)-1)*100:0}:null;
   return{dt:new Date().toISOString().split("T")[0],ti:Math.round(totalI*100)/100,tv:Math.round(totalV*100)/100,tgp:Math.round(totalGP*100)/100,tgpp:totalI?Math.round((totalV/totalI-1)*10000)/100:0,tec:Math.round(totalEC*100)/100,pos:posArr,sp:splits,es:es,cx:cxAll,cxe:cxEnt,
-    m2:{txns:m2txns,ents:m2ents,chart:m2chart,iwdaPrices:m2iwdaPrices,months:m2months,
-      summary:{inv:m2tInv,val:m2tVal,gp:m2tVal-m2tInv,gpp:m2tInv?((m2tVal/m2tInv)-1)*100:0,iwdaVal:m2tIWDA,iwdaRet:m2tInv?((m2tIWDA/m2tInv)-1)*100:0}}};
+    m2:{txns:m2txns,ents:m2ents,chart:m2chart,iwdaPrices:m2iwdaPrices,months:m2months,sp5Monthly:sp5Monthly,
+      sp500:m2sp500sum,
+      summary:{inv:m2tInv,val:m2tVal,gp:m2tVal-m2tInv,gpp:m2tInv?((m2tVal/m2tInv)-1)*100:0,iwdaVal:m2tIWDA,iwdaRet:m2tInv?((m2tIWDA/m2tInv)-1)*100:0,
+        sp500Val:m2tSP500,sp500Ret:m2tInv?((m2tSP500/m2tInv)-1)*100:0}}};
 }
 
 function handleFile(file){
@@ -552,25 +603,14 @@ function m2getSummary(){
   if(!D||!D.m2)return null;
   if(currentFilter==="Todas")return D.m2.summary;
   var e=D.m2.ents[currentFilter];if(!e)return null;
-  return{inv:e.inv,val:e.val,gp:e.val-e.inv,gpp:e.inv?((e.val/e.inv)-1)*100:0,iwdaVal:e.iwda,iwdaRet:e.inv?((e.iwda/e.inv)-1)*100:0};
+  return{inv:e.inv,val:e.val,gp:e.val-e.inv,gpp:e.inv?((e.val/e.inv)-1)*100:0,iwdaVal:e.iwda,iwdaRet:e.inv?((e.iwda/e.inv)-1)*100:0,
+    sp500Val:e.sp500,sp500Ret:e.inv?((e.sp500/e.inv)-1)*100:0};
 }
 
 function m2getSP500Summary(){
-  if(!M2.bench||!M2.bench.sp500Eur)return null;
-  var txns=D.m2.txns;
-  if(currentFilter!=="Todas")txns=txns.filter(function(t){return t.ent===currentFilter});
-  txns=txns.filter(function(t){return t.oc==="O"});
-  var sp=M2.bench.sp500Eur;var keys=Object.keys(sp).sort();
-  if(keys.length===0)return null;
-  var latest=sp[keys[keys.length-1]];
-  var tInv=0,tSP=0;
-  for(var i=0;i<txns.length;i++){
-    var mk=txns[i].bm;var spAt=null;
-    if(sp[mk])spAt=sp[mk];
-    else{for(var j=keys.length-1;j>=0;j--){if(keys[j]<=mk){spAt=sp[keys[j]];break}}}
-    if(spAt&&spAt>0){tInv+=txns[i].inv;tSP+=txns[i].inv*(latest/spAt)}
-  }
-  return{inv:tInv,val:tSP,ret:tInv?((tSP/tInv)-1)*100:0};
+  var s=m2getSummary();
+  if(!s||!s.sp500Val)return null;
+  return{inv:s.inv,val:s.sp500Val,ret:s.sp500Ret};
 }
 
 function m2filterChart(period){
@@ -606,55 +646,18 @@ function fetchYahooHist(ticker){
   }).catch(function(){return null})
 }
 
-function fetchYahooHistPositions(){
-  // Portfolio curve is now calculated in renderMod2Chart using entity-filtered data
-  // No additional API calls needed
-  renderMod2();
-  var prog=document.getElementById("bench-progress");
-  prog.classList.add("hidden");
-}
-
 function loadBenchmarks(){
   if(!D)return;
   var btn=document.getElementById("btn-load-bench");
   btn.disabled=true;btn.textContent="A carregar...";
   var prog=document.getElementById("bench-progress");prog.classList.remove("hidden");
-  prog.textContent="Índices: 0/3";
-  Promise.all([fetchYahooHist("IWDA.AS"),fetchYahooHist("^GSPC"),fetchYahooHist("EURUSD=X")]).then(function(res){
-    var iwdaH=res[0],spH=res[1],fxH=res[2];
-    prog.textContent="Índices: 3/3";
-    var sp500Eur=null;
-    if(spH&&fxH){
-      sp500Eur={};var spKeys=Object.keys(spH);
-      for(var i=0;i<spKeys.length;i++){var k=spKeys[i];var fx=fxH[k];
-        if(!fx){var fxKs=Object.keys(fxH).sort();for(var j=fxKs.length-1;j>=0;j--){if(fxKs[j]<=k){fx=fxH[fxKs[j]];break}}}
-        if(fx&&fx>0)sp500Eur[k]=spH[k]/fx}
-    }
-    var moedas={};for(var pi=0;pi<D.pos.length;pi++){var meCur=D.pos[pi].me;if(meCur&&meCur!=="EUR")moedas[meCur]=1}
-    var fxPairsHist=Object.keys(moedas).filter(function(m){return m!=="USD"}).map(function(m){return"EUR"+m+"=X"});
-    var fxHistories={};if(fxH)fxHistories["USD"]=fxH;
-    function finalizeBench(fxHistories2){
-      var monthlyFx={};var allFxM={};
-      for(var cur in fxHistories2){var ks=Object.keys(fxHistories2[cur]);for(var ki=0;ki<ks.length;ki++)allFxM[ks[ki]]=1}
-      for(var month in allFxM){monthlyFx[month]={};for(var cur2 in fxHistories2){if(fxHistories2[cur2][month])monthlyFx[month][cur2]=fxHistories2[cur2][month]}}
-      M2.bench={iwda:iwdaH,sp500Eur:sp500Eur,monthlyFx:monthlyFx};
-      M2.sp500Bench=m2getSP500Summary();
-      renderMod2();
-      btn.textContent="Benchmarks carregados";btn.style.background="rgba(52,211,153,.15)";btn.style.borderColor="rgba(52,211,153,.3)";btn.style.color="#34d399";
-      prog.classList.add("hidden");
-    }
-    if(fxPairsHist.length>0){
-      prog.textContent="Câmbios: 0/"+fxPairsHist.length;var fxDone=0;
-      var fxProms=fxPairsHist.map(function(pair){
-        return fetchYahooHist(pair).then(function(hist){
-          var cur=pair.replace("EUR","").replace("=X","");if(hist)fxHistories[cur]=hist;
-          fxDone++;prog.textContent="Câmbios: "+fxDone+"/"+fxPairsHist.length;
-        })
-      });
-      Promise.all(fxProms).then(function(){finalizeBench(fxHistories)});
-    }else{
-      finalizeBench(fxHistories);
-    }
+  prog.textContent="IWDA histórico...";
+  fetchYahooHist("IWDA.AS").then(function(iwdaH){
+    prog.textContent="Concluído";
+    M2.bench={iwda:iwdaH};
+    renderMod2();
+    btn.textContent="Benchmarks carregados";btn.style.background="rgba(52,211,153,.15)";btn.style.borderColor="rgba(52,211,153,.3)";btn.style.color="#34d399";
+    prog.classList.add("hidden");
   }).catch(function(){
     btn.disabled=false;btn.textContent="Erro — tentar novamente";
     prog.classList.add("hidden");
@@ -674,7 +677,7 @@ function renderMod2KPIs(){
   var el=document.getElementById("mod2-kpis");
   el.innerHTML='<div class="mod2-kpi"><div class="mod2-kpi-header"><div class="kpi-icon">📊</div><div class="kpi-label">Retorno Portfolio</div></div><div class="mod2-kpi-value" style="color:'+(s.gpp>=0?"#34d399":"#f87171")+'">'+fP(s.gpp)+'</div><div class="mod2-kpi-sub" style="color:'+(s.gp>=0?"#34d399":"#f87171")+'">'+(s.gp>=0?"+":"")+fE(s.gp)+'</div></div>'+
     '<div class="mod2-kpi"><div class="mod2-kpi-header"><div class="kpi-icon">🌍</div><div class="kpi-label">Alpha vs IWDA</div></div><div class="mod2-kpi-value" style="color:'+(alphaIWDA>=0?"#34d399":"#f87171")+'">'+fP(alphaIWDA)+'</div><div class="mod2-kpi-sub" style="color:'+(alphaIWDAeur>=0?"#34d399":"#f87171")+'">'+(alphaIWDAeur>=0?"+":"")+fE(alphaIWDAeur)+'</div></div>'+
-    '<div class="mod2-kpi"><div class="mod2-kpi-header"><div class="kpi-icon">🇺🇸</div><div class="kpi-label">Alpha vs S&P 500</div></div>'+(sp?'<div class="mod2-kpi-value" style="color:'+(alphaSP>=0?"#34d399":"#f87171")+'">'+fP(alphaSP)+'</div><div class="mod2-kpi-sub" style="color:'+(alphaSPeur>=0?"#34d399":"#f87171")+'">'+(alphaSPeur>=0?"+":"")+fE(alphaSPeur)+'</div>':'<div class="mod2-kpi-value" style="color:#8b8fa3">—</div><div class="mod2-kpi-sub" style="color:#8b8fa3;font-style:italic">Clica "Carregar Benchmarks"</div>')+'</div>';
+    '<div class="mod2-kpi"><div class="mod2-kpi-header"><div class="kpi-icon">🇺🇸</div><div class="kpi-label">Alpha vs S&P 500</div></div>'+(sp?'<div class="mod2-kpi-value" style="color:'+(alphaSP>=0?"#34d399":"#f87171")+'">'+fP(alphaSP)+'</div><div class="mod2-kpi-sub" style="color:'+(alphaSPeur>=0?"#34d399":"#f87171")+'">'+(alphaSPeur>=0?"+":"")+fE(alphaSPeur)+'</div>':'<div class="mod2-kpi-value" style="color:#8b8fa3">—</div><div class="mod2-kpi-sub" style="color:#8b8fa3;font-style:italic">Folha "Cotações Benchmark" não encontrada</div>')+'</div>';
 }
 
 function renderMod2Periods(){
@@ -697,32 +700,34 @@ function renderMod2Chart(){
   var iwdaData=cd.map(function(d){return d.iwda});
 
   // Portfolio curve: scale entity-filtered IWDA curve by actual alpha ratio
-  // This uses the SAME entity-filtered data (cd) so it's always consistent
   var portData=null;
   if(M2.bench&&s.iwdaVal>0){
-    var ratio=s.val/s.iwdaVal; // actual portfolio value / IWDA benchmark value
+    var ratio=s.val/s.iwdaVal;
     portData=cd.map(function(d,idx){
-      if(idx===cd.length-1)return Math.round(s.val); // anchor final point to real value
+      if(idx===cd.length-1)return Math.round(s.val);
       return Math.round(d.iwda*ratio);
     });
   }
 
-  // S&P 500 EUR curve - built from entity-filtered transactions
+  // S&P 500 EUR curve from Excel benchmark data (sp5Monthly)
   var spData=null;
-  if(M2.bench&&M2.bench.sp500Eur){
-    var sp=M2.bench.sp500Eur;var spKeys=Object.keys(sp).sort();
+  var sp5M=D.m2.sp5Monthly;
+  if(sp5M&&Object.keys(sp5M).length>0){
+    var sp5Keys=Object.keys(sp5M).sort();
     var txns=currentFilter==="Todas"?D.m2.txns:D.m2.txns.filter(function(t){return t.ent===currentFilter});
     spData=[];
     for(var ci=0;ci<cd.length;ci++){
       var mon=cd[ci].m;var cumI=0,spVal=0;
+      // Find SP500 EUR index for this month (latest available <= mon)
+      var spNow=sp5M[mon];
+      if(!spNow){for(var j2=sp5Keys.length-1;j2>=0;j2--){if(sp5Keys[j2]<=mon){spNow=sp5M[sp5Keys[j2]];break}}}
       for(var ti=0;ti<txns.length;ti++){
         var tx=txns[ti];if(tx.oc!=="O")continue;
         if(!tx.bm||tx.bm>mon)continue;
         cumI+=tx.inv;
-        var spAt=sp[tx.bm];
-        if(!spAt){for(var j=spKeys.length-1;j>=0;j--){if(spKeys[j]<=tx.bm){spAt=sp[spKeys[j]];break}}}
-        var spNow=sp[mon];
-        if(!spNow){for(var j2=spKeys.length-1;j2>=0;j2--){if(spKeys[j2]<=mon){spNow=sp[spKeys[j2]];break}}}
+        // Find SP500 EUR index at purchase month
+        var spAt=sp5M[tx.bm];
+        if(!spAt){for(var j=sp5Keys.length-1;j>=0;j--){if(sp5Keys[j]<=tx.bm){spAt=sp5M[sp5Keys[j]];break}}}
         if(spAt&&spAt>0&&spNow)spVal+=tx.inv*(spNow/spAt);
       }
       spData.push(cumI>0?Math.round(spVal):null);
@@ -746,7 +751,7 @@ function renderMod2Chart(){
     (portData?'<div class="mod2-legend-item"><div class="mod2-legend-line" style="background:#818cf8"></div>Portfolio</div>':'')+
     '<div class="mod2-legend-item"><div class="mod2-legend-line" style="background:#34d399"></div>Se IWDA</div>'+
     (spData?'<div class="mod2-legend-item"><div class="mod2-legend-line" style="background:#f59e0b"></div>Se S&P 500 EUR</div>':'');
-  document.getElementById("mod2-chart-note").textContent=portData?"":"Clica \"Carregar Benchmarks\" para ver a curva do portfolio e S&P 500";
+  document.getElementById("mod2-chart-note").textContent=portData?"":"Clica \"Carregar Benchmarks\" para ver a curva do portfolio";
 }
 
 function renderMod2Table(){
@@ -765,7 +770,7 @@ function renderMod2Table(){
     var spGP=sp.val-sp.inv;var alphaSP=s.gpp-sp.ret;
     html+='<tr><td style="text-align:left"><div style="display:flex;align-items:center;gap:8px"><span class="mod2-dot" style="background:#f59e0b"></span><strong>S&P 500</strong> <span style="font-size:10px;color:#8b8fa3">em EUR</span></div></td><td>'+fE(sp.inv)+'</td><td style="font-weight:600">'+fE(sp.val)+'</td><td style="color:'+(spGP>=0?"#34d399":"#f87171")+';font-weight:500">'+(spGP>=0?"+":"")+fE(spGP)+'</td><td style="color:'+(sp.ret>=0?"#34d399":"#f87171")+';font-weight:600">'+fP(sp.ret)+'</td><td style="color:'+((-alphaSP)>=0?"#34d399":"#f87171")+';font-weight:500">'+fP(-alphaSP)+'</td></tr>';
   }else{
-    html+='<tr><td style="text-align:left"><div style="display:flex;align-items:center;gap:8px"><span class="mod2-dot" style="background:#f59e0b"></span><strong style="color:#8b8fa3">S&P 500</strong> <span style="font-size:10px;color:#8b8fa3">em EUR</span></div></td><td colspan="5" style="text-align:center;color:#8b8fa3;font-size:11px;font-style:italic">Clica "Carregar Benchmarks"</td></tr>';
+    html+='<tr><td style="text-align:left"><div style="display:flex;align-items:center;gap:8px"><span class="mod2-dot" style="background:#f59e0b"></span><strong style="color:#8b8fa3">S&P 500</strong> <span style="font-size:10px;color:#8b8fa3">em EUR</span></div></td><td colspan="5" style="text-align:center;color:#8b8fa3;font-size:11px;font-style:italic">Folha "Cotações Benchmark" não encontrada</td></tr>';
   }
   html+='</tbody>';
   document.getElementById("mod2-table-body").innerHTML=html;
