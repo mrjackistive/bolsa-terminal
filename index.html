@@ -358,7 +358,8 @@ function parseExcel(data){
     var bm2=m2dk(dc2);
     if(bm2&&iwC2>0)m2iwdaPrices[bm2]=iwC2;
     if(oc2==="C"&&dv2&&iwV2){var sm3=m2dk(dv2);if(sm3)m2iwdaPrices[sm3]=iwV2}
-    m2txns.push({oc:oc2,inv:inv2,val:val2,bm:bm2,sm:oc2==="C"?m2dk(dv2):null,iwC:iwC2,iwA:iwA2,viIdx:viIdx2,ent:ent3,isin:rw[colIdx["ISIN"]],ticker:rw[colIdx["Ticker"]]||""});
+    var qtd2=Number(rw[colIdx["Qtd. Compra"]])||0;
+    m2txns.push({oc:oc2,inv:inv2,val:val2,bm:bm2,sm:oc2==="C"?m2dk(dv2):null,iwC:iwC2,iwA:iwA2,viIdx:viIdx2,ent:ent3,isin:rw[colIdx["ISIN"]],ticker:rw[colIdx["Ticker"]]||"",q:qtd2});
     if(oc2==="O"){m2tInv+=inv2;m2tVal+=val2;m2tIWDA+=viIdx2;
       if(ent3){if(!m2ents[ent3])m2ents[ent3]={inv:0,val:0,iwda:0};m2ents[ent3].inv+=inv2;m2ents[ent3].val+=val2;m2ents[ent3].iwda+=viIdx2}}
   }
@@ -606,42 +607,48 @@ function fetchYahooHist(ticker){
 }
 
 function fetchYahooHistPositions(positions,fxRates){
-  // Fetch monthly history for each open position to reconstruct portfolio value
+  // Build ISIN->Yahoo ticker map from current positions
   var tickerMap={};
   for(var i=0;i<positions.length;i++){
     var p=positions[i];var mt=p.t.split(" / ")[0];
-    tickerMap[p.isin]={ticker:getYahooTicker(mt,p.isin),me:p.me,q:p.q}
+    tickerMap[p.isin]={ticker:getYahooTicker(mt,p.isin),me:p.me}
   }
   var entries=Object.entries(tickerMap);
   var prog=document.getElementById("bench-progress");
   var total=entries.length;var done=0;
-  var histories={};
+  var histories={}; // isin -> {month -> price_in_original_currency}
 
   function processBatch(bi){
     if(bi>=entries.length){
-      // Build portfolio value curve
+      // Now build portfolio value curve using INDIVIDUAL LOTS (not aggregated positions)
+      // For each month M, only include lots where buy_month <= M and (open OR sell_month > M)
+      var txns=D.m2.txns;
       var allMonths={};
       for(var isin in histories){if(histories[isin]){var ks=Object.keys(histories[isin]);for(var ki=0;ki<ks.length;ki++)allMonths[ks[ki]]=1}}
       var sortedM=Object.keys(allMonths).sort();
       var portCurve={};
       for(var mi=0;mi<sortedM.length;mi++){
         var month=sortedM[mi];var totalVal=0;var hasData=false;
-        for(var isin2 in tickerMap){
-          var tm=tickerMap[isin2];
-          var hist=histories[isin2];if(!hist)continue;
-          var price=hist[month];if(price==null)continue;
-          // Convert to EUR
+        for(var ti=0;ti<txns.length;ti++){
+          var tx=txns[ti];
+          // Only include lots that existed in this month
+          if(!tx.bm||tx.bm>month)continue; // not yet bought
+          if(tx.oc==="C"&&tx.sm&&tx.sm<=month)continue; // already sold
+          var isinHist=histories[tx.isin];
+          if(!isinHist)continue;
+          var price=isinHist[month];if(price==null)continue;
+          // Convert to EUR using FX rate for this month
+          var me=tickerMap[tx.isin]?tickerMap[tx.isin].me:"EUR";
           var priceEur=price;
-          if(tm.me!=="EUR"&&fxRates&&fxRates[month]&&fxRates[month][tm.me]){
-            priceEur=price/fxRates[month][tm.me]
-          }else if(tm.me!=="EUR"){
-            // Try to find closest month FX
-            var fxKeys=Object.keys(fxRates||{}).sort();
-            for(var fi=fxKeys.length-1;fi>=0;fi--){
-              if(fxKeys[fi]<=month&&fxRates[fxKeys[fi]]&&fxRates[fxKeys[fi]][tm.me]){priceEur=price/fxRates[fxKeys[fi]][tm.me];break}
+          if(me!=="EUR"&&fxRates&&fxRates[month]&&fxRates[month][me]){
+            priceEur=price/fxRates[month][me];
+          }else if(me!=="EUR"){
+            var fxKeys2=Object.keys(fxRates||{}).sort();
+            for(var fi=fxKeys2.length-1;fi>=0;fi--){
+              if(fxKeys2[fi]<=month&&fxRates[fxKeys2[fi]]&&fxRates[fxKeys2[fi]][me]){priceEur=price/fxRates[fxKeys2[fi]][me];break}
             }
           }
-          totalVal+=tm.q*priceEur;hasData=true;
+          totalVal+=tx.q*priceEur;hasData=true;
         }
         if(hasData)portCurve[month]=Math.round(totalVal);
       }
