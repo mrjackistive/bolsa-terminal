@@ -581,7 +581,7 @@ function fetchQuotes(){
         var nEs={},nCxe={};for(var e2 in D.es){var eI=0,eV=0,eEC=0,eTT=0;nCxe[e2]={};for(var i3 in nSp){if(nSp[i3][e2]){var s=nSp[i3][e2];eI+=s[1];eV+=s[2];eEC+=s[4];eTT++;var pm2="USD";for(var px=0;px<newPos.length;px++){if(newPos[px].isin===i3){pm2=newPos[px].me;break}}nCxe[e2][pm2]=(nCxe[e2][pm2]||0)+s[2]}}nEs[e2]={tt:eTT,i:Math.round(eI*100)/100,v:Math.round(eV*100)/100,gp:Math.round((eV-eI)*100)/100,gpp:eI?Math.round((eV/eI-1)*10000)/100:0,ec:Math.round(eEC*100)/100}}
         var nCx={};for(var px2=0;px2<newPos.length;px2++){var pm=newPos[px2].me;var pxv=newPos[px2].v;if(!isNaN(pxv))nCx[pm]=(nCx[pm]||0)+pxv}
         var nTV=0,nTGP=0,nTEC=0;for(var te in nEs){nTV+=nEs[te].v;nTGP+=nEs[te].gp;nTEC+=nEs[te].ec}
-        D={dt:new Date().toISOString().split("T")[0],ti:D.ti,tv:Math.round(nTV*100)/100,tgp:Math.round(nTGP*100)/100,tgpp:D.ti?Math.round((nTV/D.ti-1)*10000)/100:0,tec:Math.round(nTEC*100)/100,pos:newPos,sp:nSp,es:nEs,cx:nCx,cxe:nCxe};
+        D={dt:new Date().toISOString().split("T")[0],ti:D.ti,tv:Math.round(nTV*100)/100,tgp:Math.round(nTGP*100)/100,tgpp:D.ti?Math.round((nTV/D.ti-1)*10000)/100:0,tec:Math.round(nTEC*100)/100,pos:newPos,sp:nSp,es:nEs,cx:nCx,cxe:nCxe,m2:D.m2};
         renderDashboard();prog.classList.add("hidden");btn.classList.remove("active");
         showMsg("ok","Cotações actualizadas: "+Object.keys(prices).length+" títulos, "+Object.keys(fxRates).length+" câmbios");
         return;
@@ -718,14 +718,13 @@ function renderMod2Chart(){
     spData=[];
     for(var ci=0;ci<cd.length;ci++){
       var mon=cd[ci].m;var cumI=0,spVal=0;
-      // Find SP500 EUR index for this month (latest available <= mon)
       var spNow=sp5M[mon];
       if(!spNow){for(var j2=sp5Keys.length-1;j2>=0;j2--){if(sp5Keys[j2]<=mon){spNow=sp5M[sp5Keys[j2]];break}}}
       for(var ti=0;ti<txns.length;ti++){
-        var tx=txns[ti];if(tx.oc!=="O")continue;
+        var tx=txns[ti];
         if(!tx.bm||tx.bm>mon)continue;
+        if(tx.oc==="C"&&tx.sm&&tx.sm<=mon)continue;
         cumI+=tx.inv;
-        // Find SP500 EUR index at purchase month
         var spAt=sp5M[tx.bm];
         if(!spAt){for(var j=sp5Keys.length-1;j>=0;j--){if(sp5Keys[j]<=tx.bm){spAt=sp5M[sp5Keys[j]];break}}}
         if(spAt&&spAt>0&&spNow)spVal+=tx.inv*(spNow/spAt);
@@ -751,7 +750,7 @@ function renderMod2Chart(){
     (portData?'<div class="mod2-legend-item"><div class="mod2-legend-line" style="background:#818cf8"></div>Portfolio</div>':'')+
     '<div class="mod2-legend-item"><div class="mod2-legend-line" style="background:#34d399"></div>Se IWDA</div>'+
     (spData?'<div class="mod2-legend-item"><div class="mod2-legend-line" style="background:#f59e0b"></div>Se S&P 500 EUR</div>':'');
-  document.getElementById("mod2-chart-note").textContent=portData?"":"Clica \"Carregar Benchmarks\" para ver a curva do portfolio";
+  document.getElementById("mod2-chart-note").textContent=portData?"":"Clica \"Carregar Curva Portfolio\" para ver a curva do portfolio";
 }
 
 function renderMod2Table(){
